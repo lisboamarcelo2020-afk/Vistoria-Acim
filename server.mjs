@@ -17,7 +17,7 @@ const server=http.createServer(async(req,res)=>{
   }catch(e){return send(res,500,{error:'Falha ao processar a análise. Tente novamente.'})}
  }
  if(req.method!=='GET')return send(res,405,{error:'Método não permitido'});
- const path=req.url==='/'?'index.html':decodeURIComponent(req.url.split('?')[0]).replace(/^\//,'');if(!['index.html','app.js','sw.js','manifest.webmanifest','icon.svg'].includes(path))return send(res,404,{error:'Arquivo não encontrado'});
+ const path=new URL(req.url,'http://localhost').pathname==='/'?'index.html':decodeURIComponent(new URL(req.url,'http://localhost').pathname.slice(1));
  try{const file=join(root,path);const bytes=await readFile(file);res.writeHead(200,{'Content-Type':types[extname(file)]||'application/octet-stream'});res.end(bytes)}catch(e){send(res,404,{error:'Arquivo não encontrado'})}
 });
 server.listen(port,()=>console.log(`Vistoria disponível em http://localhost:${port}`));
