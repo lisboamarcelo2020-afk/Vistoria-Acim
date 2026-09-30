@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id), fields=['address','owner','date','time'
 let state={property:{},rooms:[]},editing=-1,db;
 const uid=()=>crypto.randomUUID?.()||String(Date.now()+Math.random());
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function show(id){['home','property','rooms','editor','result'].forEach(x=>$(x).classList.toggle('hidden',x!==id));scrollTo(0,0)}
+function show(id){['home','property','rooms','editor','result','library','compare'].forEach(x=>$(x).classList.toggle('hidden',x!==id));scrollTo(0,0)}
 function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('vistoria-acim',1);r.onupgradeneeded=()=>r.result.createObjectStore('data');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function get(key){return new Promise((res,rej)=>{const q=db.transaction('data').objectStore('data').get(key);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 function put(key,val){return new Promise((res,rej)=>{const q=db.transaction('data','readwrite').objectStore('data').put(val,key);q.onsuccess=()=>res();q.onerror=()=>rej(q.error)})}
