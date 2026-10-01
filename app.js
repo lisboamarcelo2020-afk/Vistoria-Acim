@@ -98,15 +98,88 @@ $('compareBack')?.addEventListener('click',()=>show('home'));
 $('compareSearch')?.addEventListener('input',acimRenderCompare);
 function acimRenderCompare(){
   const q=($('compareSearch')?.value||'').toLowerCase();
-  const lib=acimLoadLibrary().filter(x=>x.status==='finalizada' && (JSON.stringify(x.property||{}).toLowerCase().includes(q)||String(x.id).toLowerCase().includes(q)));
-  $('compareList').innerHTML=lib.length?lib.map(x=>`<label class="room-item"><input type="checkbox" class="cmpPick" value="${x.id}"> <span><strong>${x.property?.code||x.property?.codigo||x.property?.address||x.property?.endereco||x.id}</strong><br><small>${x.id} • ${new Date(x.updatedAt||x.createdAt).toLocaleDateString('pt-BR')}</small></span></label>`).join('')+`<div class="actions"><button class="primary" id="doCompare">Comparar selecionadas</button></div>`:'<p class="hint">Nenhuma vistoria finalizada encontrada.</p>';
+  const lib=acimLoadLibrary().filter(x=>
+    x.status==='finalizada' &&
+    (JSON.stringify(x.property||{}).toLowerCase().includes(q) ||
+    String(x.id).toLowerCase().includes(q))
+  );
+
+  const list=$('compareList');
+  list.innerHTML=lib.length?lib.map(x=>`
+    <label class="room-item">
+      <input type="checkbox" class="cmpPick" value="${escape(x.id)}">
+      <span>
+        <strong>${escape(x.property?.code||x.property?.codigo||x.property?.address||x.property?.endereco||x.id)}</strong>
+        <br>
+        <small>${escape(x.id)} •
+        ${new Date(x.updatedAt||x.createdAt).toLocaleDateString('pt-BR')}</small>
+      </span>
+    </label>
+  `).join('')+`
+    <div class="actions">
+      <button class="primary" id="doCompare">Comparar selecionadas</button>
+    </div>
+  `:'<p class="hint">Nenhuma vistoria finalizada encontrada.</p>';
+
   $('doCompare')?.addEventListener('click',()=>{
-    const ids=[...document.querySelectorAll('.cmpPick:checked')].map(x=>x.value);
-    if(ids.length!==2)return alert('Selecione exatamente duas vistorias.');
-    const [a,b]=ids.map(id=>acimLoadLibrary().find(x=>x.id===id));
-    const keyA=a.property?.code||a.property?.codigo||a.property?.address||a.property?.endereco;
-    const keyB=b.property?.code||b.property?.codigo||b.property?.address||b.property?.endereco;
-    if(keyA&&keyB&&keyA!==keyB)return alert('Selecione duas vistorias do mesmo imóvel.');
-    alert(`Comparativo selecionado:\n${a.id}\n×\n${b.id}\n\nNa próxima etapa, a IA poderá classificar as diferenças por cômodo e foto.`);
+    const ids=[...list.querySelectorAll('.cmpPick:checked')]
+      .map(x=>x.value);
+
+    if(ids.length!==2){
+      alert('Selecione exatamente duas vistorias.');
+      return;
+    }
+
+    const selected=ids.map(id=>lib.find(x=>String(x.id)===id));
+    const key=x=>String(
+      x.property?.code||x.property?.codigo||
+      x.property?.address||x.property?.endereco||''
+    ).trim().toLowerCase();
+
+    if(!key(selected[0]) || key(selected[0])!==key(selected[1])){
+      alert('Selecione duas vistorias do mesmo imóvel, com o mesmo código ou endereço.');
+      return;
+    }
+
+    selected.sort((a,b)=>String(a.createdAt||'')
+      .localeCompare(String(b.createdAt||'')));
+
+    const roomHtml=r=>`
+      <section style="margin-bottom:24px">
+        <h3>${escape(r.name||'Cômodo sem nome')}</h3>
+        <p style="white-space:pre-wrap">${escape(r.notes||'Sem observações.')}</p>
+        ${(r.photos||[]).map((p,i)=>`
+          <img src="${escape(p.data)}"
+            alt="Foto ${i+1}"
+            style="display:block;width:100%;height:auto;margin-bottom:12px">
+        `).join('')}
+      </section>
+    `;
+
+    const column=(v,title)=>`
+      <article style="min-width:0;padding:12px;border:1px solid #ddd;border-radius:12px">
+        <h3>${title}</h3>
+        <p>${escape(v.id)}<br>
+        ${escape(v.property?.address||v.property?.endereco||'')}</p>
+        ${(v.rooms||v.data?.rooms||[]).map(roomHtml).join('')}
+      </article>
+    `;
+
+    list.innerHTML=`
+      <p class="hint">
+        Confira as fotos e os descritivos das duas vistorias.
+        Esta comparação é visual; as diferenças ainda não são classificadas por IA.
+      </p>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+        ${column(selected[0],'Registro anterior')}
+        ${column(selected[1],'Registro posterior')}
+      </div>
+      <div class="actions">
+        <button class="secondary" id="pickAgain">Escolher outras vistorias</button>
+      </div>
+    `;
+
+    $('pickAgain').onclick=acimRenderCompare;
+    scrollTo(0,0);
   });
 }
