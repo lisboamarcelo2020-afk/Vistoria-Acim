@@ -98,88 +98,73 @@ $('compareBack')?.addEventListener('click',()=>show('home'));
 $('compareSearch')?.addEventListener('input',acimRenderCompare);
 function acimRenderCompare(){
   const q=($('compareSearch')?.value||'').toLowerCase();
-  const lib=acimLoadLibrary().filter(x=>
-    x.status==='finalizada' &&
-    (JSON.stringify(x.property||{}).toLowerCase().includes(q) ||
-    String(x.id).toLowerCase().includes(q))
-  );
-
+  const lib=acimLoadLibrary().filter(x=>x.status==='finalizada' &&
+    (JSON.stringify(x.property||{}).toLowerCase().includes(q)||String(x.id).toLowerCase().includes(q)));
   const list=$('compareList');
   list.innerHTML=lib.length?lib.map(x=>`
-    <label class="room-item">
-      <input type="checkbox" class="cmpPick" value="${escape(x.id)}">
-      <span>
-        <strong>${escape(x.property?.code||x.property?.codigo||x.property?.address||x.property?.endereco||x.id)}</strong>
-        <br>
-        <small>${escape(x.id)} •
-        ${new Date(x.updatedAt||x.createdAt).toLocaleDateString('pt-BR')}</small>
-      </span>
-    </label>
-  `).join('')+`
-    <div class="actions">
-      <button class="primary" id="doCompare">Comparar selecionadas</button>
-    </div>
-  `:'<p class="hint">Nenhuma vistoria finalizada encontrada.</p>';
-
+    <label class="room-item"><input type="checkbox" class="cmpPick" value="${escape(x.id)}">
+    <span><strong>${escape(x.property?.code||x.property?.address||x.id)}</strong><br>
+    <small>${escape(x.id)} • ${new Date(x.updatedAt||x.createdAt).toLocaleDateString('pt-BR')}</small></span></label>`).join('')+
+    `<div class="actions"><button id="doCompare">Comparar selecionadas</button></div>`:
+    '<p class="hint">Nenhuma vistoria finalizada encontrada.</p>';
   $('doCompare')?.addEventListener('click',()=>{
-    const ids=[...list.querySelectorAll('.cmpPick:checked')]
-      .map(x=>x.value);
-
-    if(ids.length!==2){
-      alert('Selecione exatamente duas vistorias.');
-      return;
-    }
-
+    const ids=[...list.querySelectorAll('.cmpPick:checked')].map(x=>x.value);
+    if(ids.length!==2)return alert('Selecione exatamente duas vistorias.');
     const selected=ids.map(id=>lib.find(x=>String(x.id)===id));
-    const key=x=>String(
-      x.property?.code||x.property?.codigo||
-      x.property?.address||x.property?.endereco||''
-    ).trim().toLowerCase();
-
-    if(!key(selected[0]) || key(selected[0])!==key(selected[1])){
-      alert('Selecione duas vistorias do mesmo imóvel, com o mesmo código ou endereço.');
-      return;
-    }
-
-    selected.sort((a,b)=>String(a.createdAt||'')
-      .localeCompare(String(b.createdAt||'')));
-
-    const roomHtml=r=>`
-      <section style="margin-bottom:24px">
-        <h3>${escape(r.name||'Cômodo sem nome')}</h3>
-        <p style="white-space:pre-wrap">${escape(r.notes||'Sem observações.')}</p>
-        ${(r.photos||[]).map((p,i)=>`
-          <img src="${escape(p.data)}"
-            alt="Foto ${i+1}"
-            style="display:block;width:100%;height:auto;margin-bottom:12px">
-        `).join('')}
-      </section>
-    `;
-
-    const column=(v,title)=>`
-      <article style="min-width:0;padding:12px;border:1px solid #ddd;border-radius:12px">
-        <h3>${title}</h3>
-        <p>${escape(v.id)}<br>
-        ${escape(v.property?.address||v.property?.endereco||'')}</p>
-        ${(v.rooms||v.data?.rooms||[]).map(roomHtml).join('')}
-      </article>
-    `;
-
-    list.innerHTML=`
-      <p class="hint">
-        Confira as fotos e os descritivos das duas vistorias.
-        Esta comparação é visual; as diferenças ainda não são classificadas por IA.
-      </p>
-      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
-        ${column(selected[0],'Registro anterior')}
-        ${column(selected[1],'Registro posterior')}
-      </div>
-      <div class="actions">
-        <button class="secondary" id="pickAgain">Escolher outras vistorias</button>
-      </div>
-    `;
-
-    $('pickAgain').onclick=acimRenderCompare;
-    scrollTo(0,0);
+    const key=x=>String(x.property?.code||x.property?.address||'').trim().toLowerCase();
+    if(!key(selected[0])||key(selected[0])!==key(selected[1]))return alert('Selecione duas vistorias do mesmo imóvel.');
+    selected.sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
+    renderComparison(selected[0],selected[1]);
   });
+}
+function cmpRooms(v){return v.rooms||v.data?.rooms||[]}
+function cmpKey(r){return String(r?.name||'').trim().toLowerCase()}
+function renderComparison(a,b){
+  const list=$('compareList'),ra=cmpRooms(a),rb=cmpRooms(b);
+  const names=[...new Set([...ra.map(cmpKey),...rb.map(cmpKey)])].filter(Boolean);
+  const find=(arr,n)=>arr.find(r=>cmpKey(r)===n);
+  const opts=['Sem alteração aparente','Melhorado','Reparado','Desgaste natural','Dano / avaria','Necessita manutenção','Substituído','Removido','Instalado','Não foi possível comparar','Revisar pelo vistoriador'];
+  const photos=r=>(r?.photos||[]).map((p,i)=>`<img src="${escape(p.data)}" alt="Foto ${i+1}" style="display:block;width:100%;height:auto;margin:8px 0;border-radius:8px">`).join('')||'<p class="hint">Sem fotos.</p>';
+  list.innerHTML=`<div class="status"><strong>Comparativo:</strong> ${escape(b.property?.code||a.property?.code||'')} — ${escape(b.property?.address||a.property?.address||'')}</div>
+  <p class="hint">Revise cada classificação e observação antes de gerar o PDF.</p>`+
+  names.map((n,i)=>{const x=find(ra,n),y=find(rb,n);const def=!x?'Instalado':!y?'Removido':'Revisar pelo vistoriador';return `
+    <section class="card" data-cmp="${i}"><h2>${escape(y?.name||x?.name||n)}</h2>
+    <label>Classificação da alteração</label><select class="cmpClass">${opts.map(o=>`<option ${o===def?'selected':''}>${o}</option>`).join('')}</select>
+    <label>Observação comparativa do vistoriador</label><textarea class="cmpNote" placeholder="Descreva diferenças, reparos, desgaste ou outros pontos observados."></textarea>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px">
+    <article style="min-width:0;padding:10px;border:1px solid #ddd;border-radius:10px"><strong>Anterior — ${escape(a.property?.date||'')}</strong><p style="white-space:pre-wrap">${escape(x?.notes||'Sem observações.')}</p>${photos(x)}</article>
+    <article style="min-width:0;padding:10px;border:1px solid #ddd;border-radius:10px"><strong>Atual — ${escape(b.property?.date||'')}</strong><p style="white-space:pre-wrap">${escape(y?.notes||'Sem observações.')}</p>${photos(y)}</article>
+    </div></section>`}).join('')+
+  `<section class="card"><h2>Resumo Geral da Vistoria Comparativa</h2>
+  <textarea id="generalSummary" style="min-height:180px">${escape(summaryText(names,ra,rb))}</textarea>
+  <label>Observações finais do vistoriador</label><textarea id="finalCmpNotes" placeholder="Observações, ressalvas ou orientações finais."></textarea>
+  <label>Responsável pela vistoria</label><input id="cmpInspector" value="${escape(b.property?.inspector||a.property?.inspector||'')}"></section>
+  <div class="actions"><button id="cmpPdf">📄 Gerar PDF comparativo</button><button class="secondary" id="pickAgain">Escolher outras vistorias</button></div>`;
+  $('pickAgain').onclick=acimRenderCompare;
+  $('cmpPdf').onclick=()=>comparisonPdf(a,b,names,ra,rb);
+  scrollTo(0,0);
+}
+function summaryText(names,ra,rb){
+  let common=0,newer=0,missing=0;
+  names.forEach(n=>{const a=ra.find(r=>cmpKey(r)===n),b=rb.find(r=>cmpKey(r)===n);if(a&&b)common++;else if(b)newer++;else missing++});
+  return `Foram considerados ${names.length} ambiente(s) no comparativo. ${common} aparecem nas duas vistorias${newer?`, ${newer} aparece(m) apenas na vistoria atual`:''}${missing?` e ${missing} não aparece(m) na vistoria atual`:''}. As classificações e observações devem ser revisadas e confirmadas pelo responsável antes da emissão definitiva.`;
+}
+function comparisonPdf(a,b,names,ra,rb){
+  const find=(arr,n)=>arr.find(r=>cmpKey(r)===n);
+  const cards=[...document.querySelectorAll('[data-cmp]')];
+  const imgs=r=>(r?.photos||[]).map((p,i)=>`<img src="${escape(p.data)}" alt="Foto ${i+1}">`).join('');
+  let h=`<h1>Relatório Comparativo de Vistorias</h1><div class="meta">
+  <div><strong>Código:</strong> ${escape(b.property?.code||a.property?.code||'—')}</div>
+  <div><strong>Endereço:</strong> ${escape(b.property?.address||a.property?.address||'—')}</div>
+  <div><strong>Vistoria anterior:</strong> ${escape(a.property?.date||a.id)}</div>
+  <div><strong>Vistoria atual:</strong> ${escape(b.property?.date||b.id)}</div></div>`;
+  names.forEach((n,i)=>{const x=find(ra,n),y=find(rb,n),card=cards[i],cl=card?.querySelector('.cmpClass')?.value||'',note=card?.querySelector('.cmpNote')?.value||'';
+    h+=`<section class="p-room"><h2>${escape(y?.name||x?.name||n)}</h2><p><strong>Classificação:</strong> ${escape(cl)}</p>${note?`<p><strong>Observação comparativa:</strong> ${escape(note)}</p>`:''}
+    <h3>Registro anterior</h3><p>${escape(x?.notes||'Sem observações.')}</p>${imgs(x)}
+    <h3>Registro atual</h3><p>${escape(y?.notes||'Sem observações.')}</p>${imgs(y)}</section>`});
+  h+=`<section class="p-room"><h2>Resumo Geral da Vistoria Comparativa</h2><p>${escape($('generalSummary')?.value||'')}</p>
+  <h3>Observações finais do vistoriador</h3><p>${escape($('finalCmpNotes')?.value||'Sem observações finais.')}</p></section>
+  <footer>Responsável: ${escape($('cmpInspector')?.value||'—')}<br>Relatório gerado em ${escape(new Date().toLocaleString('pt-BR'))}.<br><br>________________________________<br>Assinatura do responsável pela vistoria</footer>`;
+  $('comparePrint').innerHTML=h;document.body.classList.add('compare-print');
+  setTimeout(()=>{window.print();setTimeout(()=>document.body.classList.remove('compare-print'),700)},250);
 }
