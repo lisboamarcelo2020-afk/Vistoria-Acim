@@ -173,3 +173,38 @@ function comparisonPdf(a,b,names,ra,rb){
   $('comparePrint').innerHTML=h;document.body.classList.add('compare-print');
   setTimeout(()=>{window.print();setTimeout(()=>document.body.classList.remove('compare-print'),700)},250);
 }
+// Botão para fotografar diretamente pelo celular.
+(() => {
+  const galeria = document.getElementById('photos');
+  const camera = document.createElement('input');
+  camera.type = 'file';
+  camera.accept = 'image/*';
+  camera.setAttribute('capture', 'environment');
+  camera.hidden = true;
+
+  const botao = document.createElement('button');
+  botao.type = 'button';
+  botao.className = 'secondary';
+  botao.textContent = '📷 Tirar foto';
+  botao.style.margin = '8px 0';
+  botao.onclick = () => camera.click();
+
+  const adicionarFotos = galeria.onchange;
+  const receberFotos = async (evento) => {
+    botao.disabled = true;
+    camera.disabled = true;
+    galeria.disabled = true;
+    try {
+      await adicionarFotos(evento);
+    } finally {
+      botao.disabled = false;
+      camera.disabled = false;
+      galeria.disabled = false;
+    }
+  };
+
+  galeria.onchange = receberFotos;
+  camera.onchange = receberFotos;
+  galeria.insertAdjacentElement('afterend', botao);
+  botao.insertAdjacentElement('afterend', camera);
+})();
