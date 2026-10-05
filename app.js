@@ -72,7 +72,9 @@ async function acimOpenItem(id){
   if(await persist()){fillProperty();renderRooms();show('rooms')}
 }
 async function acimDeleteItem(id){
-  id=decodeURIComponent(id);if(!confirm('Excluir esta vistoria deste aparelho?'))return;
+  id=decodeURIComponent(id);const item=acimLoadLibrary().find(x=>x.id===id);if(!item)return;
+  const label=item.property?.code||item.data?.property?.code||item.property?.address||'sem código';
+  if(prompt('Excluir a vistoria '+label+' e suas fotos do histórico deste aparelho?\nExporte uma cópia antes, se precisar guardá-la.\n\nDigite EXCLUIR para confirmar.','')!=='EXCLUIR')return;
   try{await acimSaveLibrary(acimLoadLibrary().filter(x=>x.id!==id))}catch{return alert('Não foi possível excluir. Tente novamente.')}acimRenderLibrary(window.__acimFilter||'all');
 }
 function acimRenderLibrary(filter='all'){
