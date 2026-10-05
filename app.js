@@ -175,46 +175,55 @@ function comparisonPdf(a,b,names,ra,rb){
   $('comparePrint').innerHTML=h;document.body.classList.add('compare-print');
   printReport('comparePrint');
 }
-// Botão para fotografar diretamente pelo celular.
+// Captura dentro do aplicativo, sem abrir a câmera externa do Android.
 (() => {
-  const galeria = document.getElementById('photos');
-  const camera = document.createElement('input');
-  camera.type = 'file';
-  camera.accept = 'image/*';
-  camera.setAttribute('capture', 'environment');
-  camera.hidden = true;
-
-  const botao = document.createElement('button');
-  botao.type = 'button';
-  botao.className = 'secondary';
-  botao.textContent = '📷 Tirar foto';
-  botao.style.margin = '8px 0';
-  botao.onclick = async () => {
-    if(!await captureEditor())return;
+  const gallery = $('photos');
+  const button = document.createElement('button');
+  button.type = 'button';button.className = 'secondary';button.textContent = '📷 Tirar foto';button.style.margin = '8px 0';
+  gallery.insertAdjacentElement('afterend',button);
+  const dialog = document.createElement('dialog');
+  dialog.setAttribute('aria-label','Fotografar cômodo');
+  dialog.style.cssText = 'width:min(92vw,640px);max-height:90vh;border:0;border-radius:16px;padding:16px;background:white;color:#173b59';
+  dialog.innerHTML = '<h2 style="margin:0 0 12px">Fotografar cômodo</h2><video autoplay muted playsinline style="display:block;width:100%;max-height:60vh;object-fit:contain;background:#111"></video><p role="status">Abrindo câmera…</p><div style="display:flex;gap:12px;flex-wrap:wrap"><button type="button" data-shot disabled>Fotografar</button><button type="button" data-close class="secondary">Cancelar</button></div>';
+  document.body.append(dialog);
+  const video=dialog.querySelector('video'), status=dialog.querySelector('[role=status]'), shot=dialog.querySelector('[data-shot]');
+  let stream=null, generation=0, room=null, busy=false;
+  function stop(){generation++;stream?.getTracks().forEach(t=>t.stop());stream=null;video.pause();video.srcObject=null;shot.disabled=true;button.disabled=false;if(dialog.open)dialog.close();if(!$('editor').classList.contains('hidden'))renderPhotos()}
+  dialog.querySelector('[data-close]').onclick=stop;
+  dialog.addEventListener('cancel',e=>{e.preventDefault();stop()});
+  window.addEventListener('pagehide',stop);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden&&dialog.open)stop()});
+  video.addEventListener('loadeddata',()=>{if(dialog.open&&!busy&&video.videoWidth){shot.disabled=false;status.textContent='Enquadre o ambiente e toque em Fotografar.'}});
+  button.onclick=async()=>{
+    if(button.disabled)return;button.disabled=true;
+    room=await captureEditor();if(!room){button.disabled=false;return}
+    if(!navigator.mediaDevices?.getUserMedia){button.disabled=false;alert('Câmera indisponível neste navegador. Tire a foto pela câmera do celular e use Escolher arquivos.');return}
     $('photoList').replaceChildren();$('print').replaceChildren();$('comparePrint').replaceChildren();
-    sessionStorage.setItem('acim_camera_room',currentRoom().id);
-    camera.click();
+    const token=++generation;busy=false;status.textContent='Abrindo câmera…';shot.disabled=true;dialog.showModal();
+    try{
+      const opened=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280,max:1600},height:{ideal:720,max:1600},frameRate:{ideal:15,max:20}}});
+      if(token!==generation){opened.getTracks().forEach(t=>t.stop());return}
+      stream=opened;video.srcObject=stream;await video.play();
+      if(token===generation&&video.videoWidth){shot.disabled=false;status.textContent='Enquadre o ambiente e toque em Fotografar.'}
+    }catch(error){if(token!==generation)return;stop();alert(error.name==='NotAllowedError'?'Permita o acesso à câmera nas configurações do navegador. Você também pode usar Escolher arquivos.':'Não foi possível abrir a câmera. Tire a foto pela câmera do celular e use Escolher arquivos.')}
   };
-  camera.addEventListener('cancel',()=>{sessionStorage.removeItem('acim_camera_room');renderPhotos()});
-
-  const adicionarFotos = galeria.onchange;
-  const receberFotos = async (evento) => {
-    botao.disabled = true;
-    camera.disabled = true;
-    galeria.disabled = true;
-    try {
-      await adicionarFotos(evento);sessionStorage.removeItem('acim_camera_room');
-    } finally {
-      botao.disabled = false;
-      camera.disabled = false;
-      galeria.disabled = false;
-    }
+  shot.onclick=async()=>{
+    if(busy||!video.videoWidth||!room)return;busy=true;shot.disabled=true;
+    const target=room, canvas=document.createElement('canvas');
+    try{
+      const scale=Math.min(1,1600/video.videoWidth,1600/video.videoHeight);
+      canvas.width=Math.round(video.videoWidth*scale);canvas.height=Math.round(video.videoHeight*scale);
+      canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);
+      const width=canvas.width,height=canvas.height,data=canvas.toDataURL('image/jpeg',.78);
+      canvas.width=240;canvas.height=Math.max(1,Math.round(240*height/width));
+      canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);
+      const thumbnail=canvas.toDataURL('image/jpeg',.65);
+      // Libera a câmera antes de salvar e renderizar as fotos.
+      stop();
+      target.photos.push({data,thumbnail,width,height,name:'foto-'+Date.now()+'.jpg'});target.analysisStale=true;
+      await persist();if(currentRoom()===target)renderPhotos();
+    }catch(error){stop();alert('Não foi possível salvar a foto. Use Escolher arquivos e tente novamente.')}finally{canvas.width=canvas.height=1;busy=false}
   };
-
-  galeria.onchange = receberFotos;
-  camera.onchange = receberFotos;
-  galeria.insertAdjacentElement('afterend', botao);
-  botao.insertAdjacentElement('afterend', camera);
 })();
 
 async function captureEditor(){const name=$('roomName').value.trim();if(!name){alert('Informe o nome do cômodo antes de adicionar fotos.');return null}let room=currentRoom();if(!room){room={id:uid(),name,notes:$('notes').value.trim(),photos:[]};state.rooms.push(room);editing=state.rooms.length-1;$('deleteRoom').classList.remove('hidden')}else{if(room.name!==name)room.analysisStale=true;room.name=name;room.notes=$('notes').value.trim()}return await persist()?room:null}
