@@ -20,3 +20,11 @@ Publique o servidor em uma hospedagem que execute Node.js e forneça HTTPS. Conf
 Cada aparelho guarda seu próprio rascunho. O PDF é gerado em **Finalizar e gerar relatório > Imprimir / salvar em PDF > Salvar como PDF**. Exporte também os dados em JSON para backup. Não há sincronização central, controle de acesso ou comparação de vistorias anteriores nesta versão.
 
 A análise exige internet, envia as fotos do cômodo ao serviço de IA e pode gerar erros. O vistoriador deve revisar o descritivo e confirmar pessoalmente o estado do imóvel. A fala pode depender do navegador e de internet.
+
+## Numeração e acompanhamento das vistorias
+
+O botão **Todas as vistorias** reúne aguardando, iniciadas e finalizadas, com número sequencial, código do imóvel e responsável. O filtro permite consultar cada situação. A numeração aparece também no relatório.
+
+O código do imóvel pode ser alterado em **Dados do imóvel** antes da primeira finalização. Depois disso fica bloqueado, inclusive ao abrir novamente a vistoria. As vistorias antigas recebem numeração na ordem da data de criação, preservando seus identificadores internos, fotos e descrições. Uma exclusão não libera o número para reutilização.
+
+A sequência e a lista pertencem ao armazenamento deste navegador. Não constituem uma sequência única da imobiliária entre computadores, celulares ou perfis. Para isso, ainda é necessário implementar e configurar banco de dados central e controle de acesso. Não limpe os dados do navegador sem exportar as vistorias.

@@ -12,9 +12,10 @@ function show(id){if(id!=='editor')$('photoList').replaceChildren();if(id!=='res
 function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('vistoria-acim',1);r.onupgradeneeded=()=>r.result.createObjectStore('data');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function get(key){return new Promise((res,rej)=>{const q=db.transaction('data').objectStore('data').get(key);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 function put(key,val){return new Promise((res,rej)=>{const tx=db.transaction('data','readwrite');tx.objectStore('data').put(val,key);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('Gravação interrompida'))})}
-async function persist(){try{await put('draft',JSON.parse(JSON.stringify(state,(k,v)=>k==='aiPending'?undefined:v)));$('resume').disabled=false;return true}catch(e){alert('Não foi possível salvar os dados neste aparelho. Exporte uma cópia antes de sair.');return false}}
-function fillProperty(){fields.forEach(f=>$(f).value=state.property[f]||'')}
-function collectProperty(){fields.forEach(f=>state.property[f]=$(f).value.trim())}
+async function persist(){try{if(state.inspectionId||Object.keys(state.property||{}).length||state.rooms?.length)await acimEnsureNumber(state);await put('draft',JSON.parse(JSON.stringify(state,(k,v)=>k==='aiPending'?undefined:v)));$('resume').disabled=false;return true}catch(e){alert('Não foi possível salvar os dados neste aparelho. Exporte uma cópia antes de sair.');return false}}
+function fillProperty(){fields.forEach(f=>$(f).value=state.property[f]||'');const locked=state.status==='finalizada'||!!state.finalizedAt;$('code').readOnly=locked;$('code').setAttribute('aria-readonly',String(locked));$('codeHint').textContent=locked?'Código bloqueado: esta vistoria já foi finalizada.':'Pode ser alterado até a finalização.';$('inspectionNumber').textContent=acimNumber(state);$('inspectionStatus').value=state.status==='finalizada'?'finalizada':state.status==='aguardando'?'aguardando':'andamento';$('inspectionStatus').disabled=locked}
+
+function collectProperty(){fields.forEach(f=>{if(f==='code'&&(state.status==='finalizada'||state.finalizedAt))return;state.property[f]=$(f).value.trim()});if(state.status!=='finalizada'&&!state.finalizedAt)state.status=$('inspectionStatus').value}
 function validateProperty(){collectProperty();for(const f of ['address','owner','date','type','code','purpose'])if(!state.property[f]){alert('Preencha os campos obrigatórios.');$(f).focus();return false}return true}
 function renderRooms(){const out=$('roomList');out.innerHTML='';state.rooms.forEach((r,i)=>{const d=document.createElement('div');d.className='room';const label=document.createElement('span');label.textContent=`${i+1}. ${r.name||'Sem nome'} · ${r.photos.length} foto(s)`;const b=document.createElement('button');b.className='secondary';b.textContent='Editar';b.onclick=()=>openEditor(i);d.append(label,b);out.append(d)});if(!state.rooms.length)out.innerHTML='<p class="hint">Nenhum cômodo registrado ainda.</p>'}
 function openEditor(i){editing=i;$('editorTitle').textContent=i<0?'Novo cômodo':`Editar cômodo ${i+1}`;$('roomName').value=i<0?'':state.rooms[i].name;$('notes').value=i<0?'':state.rooms[i].notes;$('analyze').disabled=!!state.rooms[i]?.aiPending;$('aiStatus').textContent='Analise somente fotos deste ambiente e revise a descrição.';$('photos').value='';$('deleteRoom').classList.toggle('hidden',i<0);renderPhotos();show('editor')}
@@ -23,14 +24,14 @@ function renderPhotos(){const el=$('photoList');el.innerHTML='';const room=curre
 async function saveRoom(next){const name=$('roomName').value.trim();if(!name){alert('Informe o nome do cômodo.');$('roomName').focus();return}const room=currentRoom();if(room){if(room.name!==name)room.analysisStale=true;room.name=name;room.notes=$('notes').value.trim()}else state.rooms.push({id:uid(),name,notes:$('notes').value.trim(),photos:[]});await persist();renderRooms();next?openEditor(-1):show('rooms')}
 async function readPhoto(file){let source,url;const canvas=document.createElement('canvas');try{if(window.createImageBitmap){try{source=await createImageBitmap(file,{resizeWidth:1600,resizeQuality:'high'})}catch{}}if(!source){url=URL.createObjectURL(file);source=await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('Imagem incompatível. Use JPEG ou PNG.'));img.src=url})}const scale=Math.min(1,1600/source.width,1600/source.height);canvas.width=Math.max(1,Math.round(source.width*scale));canvas.height=Math.max(1,Math.round(source.height*scale));canvas.getContext('2d').drawImage(source,0,0,canvas.width,canvas.height);const data=canvas.toDataURL('image/jpeg',.78),width=canvas.width,height=canvas.height;canvas.width=240;canvas.height=Math.max(1,Math.round(240*height/width));canvas.getContext('2d').drawImage(source,0,0,canvas.width,canvas.height);return {data,thumbnail:canvas.toDataURL('image/jpeg',.65),width,height,name:file.name}}finally{source?.close?.();if(url)URL.revokeObjectURL(url);canvas.width=canvas.height=1}}
 function formattedDate(s){if(!s)return '';const [y,m,d]=s.split('-').map(Number);return new Intl.DateTimeFormat('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(y,m-1,d))}
-function buildReport(){const p=state.property;let html=acimHead('Relatório de Vistoria de Imóvel')+'<div class="meta">';for(const [title,key] of [['Endereço','address'],['Proprietário','owner'],['Data e dia','date'],['Horário','time'],['Tipo de imóvel','type'],['Código','code'],['Finalidade','purpose'],['Responsável','inspector']])html+=`<div><strong>${title}:</strong> ${escape(key==='date'?formattedDate(p[key]):p[key]||'—')}</div>`;html+='</div><p>Registro descritivo baseado nas informações e fotos inseridas durante a vistoria.</p>';state.rooms.forEach((r,i)=>{html+=`<section class="p-room"><h2>${i+1}. ${escape(r.name)}</h2><p>${escape(r.notes)||'Sem observações registradas.'}</p>`;r.photos.forEach((photo,j)=>{html+=`<img class="report-photo" src="${escape(photo.data)}" alt="${escape(r.name)} - foto ${j+1}">`});html+='</section>'});html+=`<footer>${acimContacts()}<br><br>Relatório gerado em ${escape(new Date().toLocaleString('pt-BR'))}. As condições descritas devem ser conferidas pelo responsável antes do uso ou assinatura.<br><br>________________________________<br>Responsável pela vistoria</footer>`;$('print').innerHTML=html;$('summary').textContent=`${p.code} · ${state.rooms.length} cômodo(s) · ${state.rooms.reduce((n,r)=>n+r.photos.length,0)} foto(s)`}
-$('new').onclick=async()=>{if(state.rooms.length&&!confirm('Iniciar uma nova vistoria? O rascunho atual será substituído. Exporte uma cópia se precisar guardá-lo.'))return;if(!await acimArchiveCurrent(state.status||'andamento'))return;state={property:{date:new Date().toLocaleDateString('en-CA')},rooms:[]};await persist();fillProperty();show('property')};
+function buildReport(){const p=state.property;let html=acimHead('Relatório de Vistoria de Imóvel')+`<div class="meta"><div><strong>Número da vistoria:</strong> ${escape(acimNumber(state))}</div><div><strong>Situação:</strong> ${escape(acimStatus(state))}</div>`;for(const [title,key] of [['Endereço','address'],['Proprietário','owner'],['Data e dia','date'],['Horário','time'],['Tipo de imóvel','type'],['Código','code'],['Finalidade','purpose'],['Responsável','inspector']])html+=`<div><strong>${title}:</strong> ${escape(key==='date'?formattedDate(p[key]):p[key]||'—')}</div>`;html+='</div><p>Registro descritivo baseado nas informações e fotos inseridas durante a vistoria.</p>';state.rooms.forEach((r,i)=>{html+=`<section class="p-room"><h2>${i+1}. ${escape(r.name)}</h2><p>${escape(r.notes)||'Sem observações registradas.'}</p>`;r.photos.forEach((photo,j)=>{html+=`<img class="report-photo" src="${escape(photo.data)}" alt="${escape(r.name)} - foto ${j+1}">`});html+='</section>'});html+=`<footer>${acimContacts()}<br><br>Relatório gerado em ${escape(new Date().toLocaleString('pt-BR'))}. As condições descritas devem ser conferidas pelo responsável antes do uso ou assinatura.<br><br>________________________________<br>Responsável pela vistoria</footer>`;$('print').innerHTML=html;$('summary').textContent=`${acimNumber(state)} · Imóvel ${p.code} · ${state.rooms.length} cômodo(s) · ${state.rooms.reduce((n,r)=>n+r.photos.length,0)} foto(s)`}
+$('new').onclick=async()=>{if(state.rooms.length&&!confirm('Iniciar uma nova vistoria? O rascunho atual será substituído. Exporte uma cópia se precisar guardá-lo.'))return;if(!await acimArchiveCurrent(state.status||'andamento'))return;state={property:{date:new Date().toLocaleDateString('en-CA')},rooms:[],status:'aguardando',inspectionId:uid(),createdAt:new Date().toISOString()};if(!await persist())return;fillProperty();show('property')};
 $('resume').onclick=()=>{fillProperty();if(state.rooms&&state.rooms.length){renderRooms();show('rooms')}else show(Object.keys(state.property).length?'property':'home')};$('backHome').onclick=async()=>{collectProperty();await persist();show('home')};
-$('toRooms').onclick=async()=>{if(!validateProperty())return;await persist();renderRooms();show('rooms')};$('editProperty').onclick=()=>{fillProperty();show('property')};
+$('toRooms').onclick=async()=>{if(!validateProperty())return;if(state.status!=='finalizada')state.status='andamento';await persist();renderRooms();show('rooms')};$('editProperty').onclick=()=>{fillProperty();show('property')};
 $('addRoom').onclick=()=>openEditor(-1);$('saveNext').onclick=()=>saveRoom(true);$('saveBack').onclick=()=>saveRoom(false);
 
-$('saveExitRooms').onclick=async()=>{if(await persist()&&await acimArchiveCurrent('andamento'))show('home')};
-$('saveExit').onclick=async()=>{if(await captureEditor()&&await acimArchiveCurrent('andamento'))show('home')};
+$('saveExitRooms').onclick=async()=>{if(await persist()&&await acimArchiveCurrent(state.status||'andamento'))show('home')};
+$('saveExit').onclick=async()=>{if(await captureEditor()&&await acimArchiveCurrent(state.status||'andamento'))show('home')};
 
 $('deleteRoom').onclick=async()=>{if(!confirm('Excluir este cômodo e suas fotos?'))return;state.rooms.splice(editing,1);await persist();renderRooms();show('rooms')};
 $('analyze').onclick=async()=>{const room=currentRoom(),name=$('roomName').value.trim();if(!room?.photos.length)return alert('Adicione fotos deste cômodo antes de analisar.');if(!name)return alert('Informe o nome do cômodo.');if(room.photos.length>12)return alert('A IA aceita até 12 fotos por análise. Divida o registro em áreas menores.');if(room.aiPending)return;room.name=name;room.notes=$('notes').value.trim();const photos=room.photos.map(p=>p.data),notes=room.notes;room.aiPending=true;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),120000);$('analyze').disabled=true;$('aiStatus').textContent='Analisando as fotos. Você pode aguardar ou continuar em outro cômodo.';try{const response=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({room:name,notes:room.declaredNotes??(room.aiGenerated||/Visível:/.test(notes)?'':notes),photos})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Falha na análise');if(!state.rooms.includes(room))return;const unchanged=room.photos.length===photos.length&&room.photos.every((p,i)=>p.data===photos[i])&&room.name===name&&room.notes===notes&&(!(currentRoom()===room)||$('notes').value.trim()===notes);if(!unchanged){if(currentRoom()===room)$('aiStatus').textContent='O cômodo foi alterado durante a análise. Analise novamente para usar as fotos e observações atuais.';return}room.declaredNotes=room.declaredNotes??(room.aiGenerated||/Visível:/.test(notes)?'':notes);room.notes=data.description;room.analysisStale=false;room.aiGenerated=true;if(currentRoom()===room){$('notes').value=data.description;$('aiStatus').textContent='Descrição criada para este cômodo. Confira e edite antes de finalizar.'}await persist()}catch(e){if(currentRoom()===room)$('aiStatus').textContent=e.name==='AbortError'?'A análise demorou demais. Tente novamente.':'Não foi possível analisar: '+e.message}finally{clearTimeout(timer);delete room.aiPending;if(currentRoom()===room)$('analyze').disabled=false}};
@@ -40,14 +41,46 @@ $('export').onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{typ
 let recognition=null;
 $('speak').onclick=()=>{if(recognition){recognition.stop();return}const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){alert('Este navegador não oferece ditado por voz. Use o microfone do teclado Android para escrever por voz.');return}recognition=new SR();recognition.lang='pt-BR';recognition.continuous=true;recognition.interimResults=false;recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)$('notes').value+=($('notes').value?' ':'')+e.results[i][0].transcript};recognition.onerror=e=>{if(e.error!=='no-speech')alert('Falha no reconhecimento de voz: '+e.error)};recognition.onend=()=>{$('speak').textContent='🎙️ Ditar observações';recognition=null};recognition.start();$('speak').textContent='Parar ditado'};
 
-(async()=>{try{db=await openDB();state=await get('draft')||state;inspectionLibrary=await get(ACIM_LIBRARY_KEY)||[];if(!inspectionLibrary.length){let legacy;try{legacy=JSON.parse(localStorage.getItem(ACIM_LIBRARY_KEY)||'[]')}catch{legacy=[]}if(legacy.length){await acimSaveLibrary(legacy.map(x=>({id:x.id,status:x.status,createdAt:x.createdAt,updatedAt:x.updatedAt,property:x.property,data:x.data||x})));localStorage.removeItem(ACIM_LIBRARY_KEY)}}const recovery=sessionStorage.getItem('acim_camera_room');if(recovery){sessionStorage.removeItem('acim_camera_room');const index=state.rooms?.findIndex(r=>r.id===recovery);if(index>=0){openEditor(index);$('aiStatus').textContent='Rascunho recuperado. Se a câmera foi interrompida pelo celular, tire a foto pelo aplicativo Câmera e importe pela galeria.'}}state.rooms=state.rooms||[];fillProperty();$('resume').disabled=!Object.keys(state.property).length;if(location.protocol==='file:')$('aiStatus').textContent='Modo de teste local: cadastro, fotos e PDF funcionam; para analisar fotos com IA é necessário publicar e configurar o servidor.'}catch(e){alert('Seu navegador não permitiu salvar dados localmente. Ative o armazenamento do navegador e recarregue.')}if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{})})();
+(async()=>{try{db=await openDB();state=await get('draft')||state;inspectionLibrary=await get(ACIM_LIBRARY_KEY)||[];if(!inspectionLibrary.length){let legacy;try{legacy=JSON.parse(localStorage.getItem(ACIM_LIBRARY_KEY)||'[]')}catch{legacy=[]}if(legacy.length){await acimSaveLibrary(legacy.map(x=>({id:x.id,status:x.status,createdAt:x.createdAt,updatedAt:x.updatedAt,property:x.property,data:x.data||x})));localStorage.removeItem(ACIM_LIBRARY_KEY)}}const recovery=sessionStorage.getItem('acim_camera_room');if(recovery){sessionStorage.removeItem('acim_camera_room');const index=state.rooms?.findIndex(r=>r.id===recovery);if(index>=0){openEditor(index);$('aiStatus').textContent='Rascunho recuperado. Se a câmera foi interrompida pelo celular, tire a foto pelo aplicativo Câmera e importe pela galeria.'}}state.rooms=state.rooms||[];await acimMigrateNumbers();fillProperty();$('resume').disabled=!Object.keys(state.property).length;if(location.protocol==='file:')$('aiStatus').textContent='Modo de teste local: cadastro, fotos e PDF funcionam; para analisar fotos com IA é necessário publicar e configurar o servidor.'}catch(e){alert('Seu navegador não permitiu salvar dados localmente. Ative o armazenamento do navegador e recarregue.')}if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{})})();
 
 
 // ===== ACIM V2: biblioteca de múltiplas vistorias =====
 const ACIM_LIBRARY_KEY='acim_inspections_v2';
 let inspectionLibrary=[];const acimLoadLibrary=()=>inspectionLibrary;
 const acimSaveLibrary=async v=>{await put(ACIM_LIBRARY_KEY,v);inspectionLibrary=v};
-const acimInspectionId=()=>`ACIM-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+const acimInspectionId=()=>uid();
+const acimNumber=v=>v.sequence?String(v.sequence).padStart(6,'0'):'Aguardando numeração';
+const acimStatus=v=>v.status==='finalizada'||v.finalizedAt?'Finalizada':v.status==='aguardando'?'Aguardando':'Iniciada';
+// The counter is shared atomically by tabs in this browser and never decreases.
+const acimNumberPending=new WeakMap();
+function acimEnsureNumber(v){
+ if(v.sequence)return Promise.resolve();
+ if(acimNumberPending.has(v))return acimNumberPending.get(v);
+ const pending=new Promise((resolve,reject)=>{
+  const tx=db.transaction('data','readwrite'),store=tx.objectStore('data');
+  const req=store.get('acim_sequence_v1');let n;
+  req.onsuccess=()=>{n=Number(req.result||0)+1;store.put(n,'acim_sequence_v1');};
+  tx.oncomplete=()=>{v.sequence=n;v.inspectionId=v.inspectionId||uid();resolve()};
+  tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Falha na numeração'));
+ });
+ acimNumberPending.set(v,pending);pending.finally(()=>acimNumberPending.delete(v)).catch(()=>{});return pending;
+}
+async function acimMigrateNumbers(){
+ const lib=[...inspectionLibrary];let changed=false;
+ const max=Math.max(0,...lib.map(x=>Number(x.sequence||x.data?.sequence||0)),Number(state.sequence||0));
+ await new Promise((resolve,reject)=>{const tx=db.transaction('data','readwrite'),store=tx.objectStore('data'),q=store.get('acim_sequence_v1');q.onsuccess=()=>store.put(Math.max(max,Number(q.result||0)),'acim_sequence_v1');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)});
+ for(const item of [...lib].sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')))){
+  item.sequence=item.sequence||item.data?.sequence;
+  if(!item.sequence){await acimEnsureNumber(item);changed=true}
+  if(item.data){item.data.sequence=item.sequence;if(item.status==='finalizada')item.data.finalizedAt=item.data.finalizedAt||item.updatedAt||new Date().toISOString()}
+ }
+ if(changed)await acimSaveLibrary(lib);
+ if(Object.keys(state.property||{}).length||state.rooms.length){
+  const item=lib.find(x=>x.id===state.inspectionId);if(item){state.sequence=item.sequence;if(item.status==='finalizada'){state.status='finalizada';state.finalizedAt=state.finalizedAt||item.updatedAt||new Date().toISOString()}}
+  if(!state.status)state.status=state.rooms.length?'andamento':'aguardando';await persist();
+ }
+}
+
 const acimSummary=(v)=>({
   id:v.id||acimInspectionId(),
   status:v.status||'andamento',
@@ -60,16 +93,16 @@ const acimSummary=(v)=>({
 async function acimArchiveCurrent(status='andamento'){
   if(!state || (!Object.keys(state.property||{}).length && !(state.rooms||[]).length)) return true;
   let lib=[...acimLoadLibrary()], id=state.inspectionId||acimInspectionId();
-  state.inspectionId=id;state.status=status;
-  const data=JSON.parse(JSON.stringify({...state,id,status},(k,v)=>k==='aiPending'?undefined:v));let item={id,status,createdAt:state.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString(),property:data.property,data};state.createdAt=item.createdAt;
+  state.inspectionId=id;state.status=state.finalizedAt||state.status==='finalizada'?'finalizada':status;if(state.status==='finalizada')state.finalizedAt=state.finalizedAt||new Date().toISOString();status=state.status;if(!await persist())return false;
+  const data=JSON.parse(JSON.stringify({...state,id,status},(k,v)=>k==='aiPending'?undefined:v));let item={id,status,sequence:state.sequence,createdAt:state.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString(),property:data.property,data};state.createdAt=item.createdAt;
   let i=lib.findIndex(x=>x.id===id);
   if(i>=0) lib[i]=item; else lib.unshift(item);
   try{await acimSaveLibrary(lib);return await persist()}catch{alert('Não foi possível guardar a vistoria no histórico. Exporte os dados antes de sair.');return false}
 }
 async function acimOpenItem(id){
   id=decodeURIComponent(id);const item=acimLoadLibrary().find(x=>x.id===id); if(!item)return;
-  state=JSON.parse(JSON.stringify(item.data||item)); state.inspectionId=item.id;
-  if(await persist()){fillProperty();renderRooms();show('rooms')}
+  state=JSON.parse(JSON.stringify(item.data||item)); state.inspectionId=item.id;state.sequence=item.sequence||state.sequence;if(item.status==='finalizada'){state.status='finalizada';state.finalizedAt=state.finalizedAt||item.updatedAt||new Date().toISOString()}
+  if(await persist()){fillProperty();renderRooms();if(state.status==='finalizada'){buildReport();show('result')}else show('rooms')}
 }
 async function acimDeleteItem(id){
   id=decodeURIComponent(id);const item=acimLoadLibrary().find(x=>x.id===id);if(!item)return;
@@ -80,23 +113,26 @@ async function acimDeleteItem(id){
 function acimRenderLibrary(filter='all'){
   window.__acimFilter=filter;
   const q=($('inspectionSearch')?.value||'').toLowerCase();
-  let lib=acimLoadLibrary().filter(x=>filter==='all'||x.status===filter);
-  lib=lib.filter(x=>JSON.stringify(x.property||{}).toLowerCase().includes(q)||String(x.id).toLowerCase().includes(q)||String(x.createdAt).includes(q));
+  const selected=filter==='all'?$('inspectionStatusFilter').value:filter;
+  let lib=acimLoadLibrary().filter(x=>selected==='all'||x.status===selected);
+  lib=lib.filter(x=>JSON.stringify(x.property||{}).toLowerCase().includes(q)||String(x.id).toLowerCase().includes(q)||String(x.createdAt).includes(q)||acimNumber(x).includes(q)||acimStatus(x).toLowerCase().includes(q));
   $('inspectionList').innerHTML=lib.length?lib.map(x=>{
     const p=x.property||{}, title=p.code||p.codigo||p.address||p.endereco||'Imóvel sem identificação';
-    return `<div class="room-item"><div><strong>${escape(title)}</strong><br><small>${escape(x.id)} • ${x.status==='finalizada'?'Finalizada':'Em andamento'} • ${cmpRooms(x).length} cômodo(s)</small></div>
-    <div class="actions"><button class="secondary" onclick="acimOpenItem('${escape(encodeURIComponent(x.id))}')">${x.status==='finalizada'?'Abrir / reabrir':'Continuar'}</button><button class="danger" onclick="acimDeleteItem('${escape(encodeURIComponent(x.id))}')">Excluir</button></div></div>`;
+    return `<div class="room-item"><div><strong>${escape(title)}</strong><br><small>Vistoria ${escape(acimNumber(x))} • ${escape(acimStatus(x))} • ${cmpRooms(x).length} cômodo(s)</small><br><small>Responsável: ${escape(p.inspector||'Não informado')}</small></div>
+    <div class="actions"><button class="secondary" onclick="acimOpenItem('${escape(encodeURIComponent(x.id))}')">${x.status==='finalizada'?'Abrir relatório':'Continuar'}</button><button class="danger" onclick="acimDeleteItem('${escape(encodeURIComponent(x.id))}')">Excluir</button></div></div>`;
   }).join(''):'<p class="hint">Nenhuma vistoria encontrada.</p>';
 }
-function acimShowLibrary(filter,title){
-  $('libraryTitle').textContent=title; $('inspectionSearch').value=''; show('library'); acimRenderLibrary(filter);
+async function acimShowLibrary(filter,title){
+  if(!await acimArchiveCurrent(state.status||'andamento'))return;$('libraryTitle').textContent=title; $('inspectionSearch').value='';$('inspectionStatusFilter').value=filter; show('library'); acimRenderLibrary(filter);
 }
 window.acimOpenItem=acimOpenItem; window.acimDeleteItem=acimDeleteItem;
+$('inspectionStatusFilter').addEventListener('change',()=>{window.__acimFilter='all';acimRenderLibrary('all')});
+$('inspectionStatus').addEventListener('change',async()=>{collectProperty();await persist()});
 $('inspectionSearch')?.addEventListener('input',()=>acimRenderLibrary(window.__acimFilter||'all'));
 $('libraryBack')?.addEventListener('click',()=>show('home'));
-$('openPending')?.addEventListener('click',()=>acimShowLibrary('andamento','Vistorias em andamento'));
+$('openPending')?.addEventListener('click',()=>acimShowLibrary('all','Todas as vistorias'));
 $('openHistory')?.addEventListener('click',()=>acimShowLibrary('finalizada','Vistorias finalizadas / Histórico'));
-$('newInspection')?.addEventListener('click',()=>{acimArchiveCurrent('andamento'); state={property:{},rooms:[],inspectionId:acimInspectionId()};persist();fillProperty();show('property')});
+$('newInspection')?.addEventListener('click',()=>{acimArchiveCurrent(state.status||'andamento'); state={property:{},rooms:[],inspectionId:acimInspectionId()};persist();fillProperty();show('property')});
 
 
 
