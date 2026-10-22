@@ -3,7 +3,7 @@ import {buildAnalysisInput} from './analysis-prompt.mjs';
 import {readFile,stat} from 'node:fs/promises';
 import {join,extname,resolve,sep} from 'node:path';
 const root=new URL('.',import.meta.url).pathname,port=Number(process.env.PORT||3000);
-const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};
+const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.jpg':'image/jpeg','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};
 function send(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data))}
 const server=http.createServer(async(req,res)=>{
  if(req.method==='POST'&&req.url==='/api/analyze'){
