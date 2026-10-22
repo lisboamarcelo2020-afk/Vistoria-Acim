@@ -28,3 +28,16 @@ O botão **Todas as vistorias** reúne aguardando, iniciadas e finalizadas, com 
 O código do imóvel pode ser alterado em **Dados do imóvel** antes da primeira finalização. Depois disso fica bloqueado, inclusive ao abrir novamente a vistoria. As vistorias antigas recebem numeração na ordem da data de criação, preservando seus identificadores internos, fotos e descrições. Uma exclusão não libera o número para reutilização.
 
 A sequência e a lista pertencem ao armazenamento deste navegador. Não constituem uma sequência única da imobiliária entre computadores, celulares ou perfis. Para isso, ainda é necessário implementar e configurar banco de dados central e controle de acesso. Não limpe os dados do navegador sem exportar as vistorias.
+
+
+## Destaques de cada ambiente
+
+Depois de adicionar fotos pela câmera ou pelos arquivos, o editor pergunta se deseja registrar destaques positivos e negativos. **Registrar destaques com fotos e descrição** abre um registro vinculado, como **Sala — DESTAQUES**, com os mesmos recursos do ambiente: câmera, importação de fotos, descrição escrita, ditado, análise de fotos por IA, edição e salvamento. Os destaques têm fotos e descritivo próprios; a descrição original do ambiente pode ser consultada nessa tela.
+
+Campos opcionais registram evidências positivas e negativas. O botão **Salvar e voltar ao ambiente principal** retorna ao ambiente. Reabrir os destaques usa o mesmo registro. O título acompanha o nome do ambiente principal. Ambos aparecem no relatório individual e comparativo, com suas respectivas fotos e descrições. Ao excluir um ambiente com destaques, a confirmação informa que ambos serão excluídos.
+
+Os destaques são salvos automaticamente e incluídos na exportação dos dados. Registre apenas o que foi observado; um campo vazio não significa ausência de defeitos. A análise de fotos existente não preenche nem substitui os campos de evidências.
+
+A análise usa as imagens em alta resolução e referências como Foto 1, Foto 2 etc. O descritivo separa descrição técnica, evidências positivas, pontos de atenção, declarações do vistoriador e limitações. Nos destaques, o contexto do ambiente principal é enviado somente como referência declarada, com as fotos do próprio registro de destaques. A análise detalhada pode demorar mais e consumir mais créditos da API.
+
+O descritivo não inclui medidas, dimensões, áreas nem estimativas de tamanho; prioriza a aparência, a localização e a conservação dos elementos visíveis.
