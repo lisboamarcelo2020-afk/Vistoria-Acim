@@ -41,3 +41,32 @@ Os destaques são salvos automaticamente e incluídos na exportação dos dados.
 A análise usa as imagens em alta resolução e referências como Foto 1, Foto 2 etc. O descritivo separa descrição técnica, evidências positivas, pontos de atenção, declarações do vistoriador e limitações. Nos destaques, o contexto do ambiente principal é enviado somente como referência declarada, com as fotos do próprio registro de destaques. A análise detalhada pode demorar mais e consumir mais créditos da API.
 
 O descritivo não inclui medidas, dimensões, áreas nem estimativas de tamanho; prioriza a aparência, a localização e a conservação dos elementos visíveis.
+
+## Histórico compartilhado
+
+No Render, configure um PostgreSQL persistente e defina o comando de build como
+`npm ci --omit=dev`. O comando de início continua `node server.mjs`. Nas
+variáveis de ambiente do serviço, configure:
+
+- `DATABASE_URL`: URL privada de conexão do PostgreSQL.
+- `VISTORIA_SESSION_SECRET`: segredo aleatório de pelo menos 32 caracteres
+  (por exemplo, gere com `openssl rand -hex 32`).
+- `VISTORIA_ACCOUNTS`: lista JSON de contas com `login` único e estável,
+  `name` para identificação e `hash` no formato `salt:hash`. Use um salt
+  aleatório em hexadecimal e scrypt com saída de 64 bytes em hexadecimal.
+
+Use senhas individuais fortes. Não coloque as variáveis ou senhas no
+repositório. Preserve os identificadores de login: são usados para a
+propriedade dos laudos. Para desativar o acesso, retire a conta da configuração
+sem reutilizar o login para outra pessoa.
+
+Após a configuração, entre em **Histórico compartilhado** com a conta
+individual. Ao finalizar, o laudo vai para o banco e fica disponível à equipe
+autenticada. Somente a conta que publicou consegue salvar uma revisão. O
+servidor registra nome, data, hora e número de versão a cada publicação ou
+revisão. A publicação concorrente de uma versão antiga é rejeitada para evitar
+sobrescrita. A consulta não muda o rascunho local. Laudos antigos salvos no
+navegador não são migrados automaticamente.
+
+Sem essas variáveis, o aplicativo mantém o modo local e avisa antes de
+finalizar apenas no aparelho. Não use esse modo para testes de compartilhamento.

@@ -1,6 +1,6 @@
 'use strict';
 const $=id=>document.getElementById(id), fields=['address','owner','date','time','type','code','purpose','inspector'];
-let state={property:{},rooms:[]},editing=-1,db;
+let state={property:{},rooms:[]},editing=-1,db,sharedPreview=null;
 const uid=()=>crypto.randomUUID?.()||String(Date.now()+Math.random());
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -8,7 +8,7 @@ const ACIM_LOGO='logo.jpg';
 function acimHead(t){return `<div class="acim-head"><img src="${ACIM_LOGO}" alt="ACIM Imóveis"><div><h1>${escape(t)}</h1><p>ACIM Imóveis • CRECI 22335</p></div></div>`}
 function acimContacts(){return `Rua Egas Bueno, 540 – Centro – Jaguariúna/SP<br>(19) 99451-1865 • (19) 3937-4700 • acim@acimimoveis.com.br • www.acimimoveis.com.br`}
 
-function show(id){if(id!=='editor')$('photoList').replaceChildren();if(id!=='result')$('print').replaceChildren();if(id!=='compare'){$('comparePrint').replaceChildren();$('compareList').replaceChildren()}['home','property','rooms','editor','result','library','compare'].forEach(x=>$(x).classList.toggle('hidden',x!==id));scrollTo(0,0)}
+function show(id){if(id!=='result'){$('backSharedResult').hidden=true;sharedPreview=null;$('sharedAudit').replaceChildren();$('editRooms').hidden=false;$('export').hidden=false;}if(id!=='editor')$('photoList').replaceChildren();if(id!=='result')$('print').replaceChildren();if(id!=='compare'){$('comparePrint').replaceChildren();$('compareList').replaceChildren()}['home','property','rooms','editor','result','library','compare','sharedHistory'].forEach(x=>$(x).classList.toggle('hidden',x!==id));scrollTo(0,0)}
 function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('vistoria-acim',1);r.onupgradeneeded=()=>r.result.createObjectStore('data');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function get(key){return new Promise((res,rej)=>{const q=db.transaction('data').objectStore('data').get(key);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 function put(key,val){return new Promise((res,rej)=>{const tx=db.transaction('data','readwrite');tx.objectStore('data').put(val,key);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('Gravação interrompida'))})}
@@ -54,7 +54,7 @@ function renderPhotos(){const el=$('photoList');el.innerHTML='';const room=curre
 async function saveRoom(next){if(!await captureEditor())return;renderRooms();next?openEditor(-1):show('rooms')}
 async function readPhoto(file){let source,url;const canvas=document.createElement('canvas');try{if(window.createImageBitmap){try{source=await createImageBitmap(file,{resizeWidth:1600,resizeQuality:'high'})}catch{}}if(!source){url=URL.createObjectURL(file);source=await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('Imagem incompatível. Use JPEG ou PNG.'));img.src=url})}const scale=Math.min(1,1600/source.width,1600/source.height);canvas.width=Math.max(1,Math.round(source.width*scale));canvas.height=Math.max(1,Math.round(source.height*scale));canvas.getContext('2d').drawImage(source,0,0,canvas.width,canvas.height);const data=canvas.toDataURL('image/jpeg',.78),width=canvas.width,height=canvas.height;canvas.width=240;canvas.height=Math.max(1,Math.round(240*height/width));canvas.getContext('2d').drawImage(source,0,0,canvas.width,canvas.height);return {data,thumbnail:canvas.toDataURL('image/jpeg',.65),width,height,name:file.name}}finally{source?.close?.();if(url)URL.revokeObjectURL(url);canvas.width=canvas.height=1}}
 function formattedDate(s){if(!s)return '';const [y,m,d]=s.split('-').map(Number);return new Intl.DateTimeFormat('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(y,m-1,d))}
-function buildReport(){const p=state.property;let html=acimHead('Relatório de Vistoria de Imóvel')+`<div class="meta"><div><strong>Número da vistoria:</strong> ${escape(acimNumber(state))}</div><div><strong>Situação:</strong> ${escape(acimStatus(state))}</div>`;for(const [title,key] of [['Endereço','address'],['Proprietário','owner'],['Data e dia','date'],['Horário','time'],['Tipo de imóvel','type'],['Código','code'],['Finalidade','purpose'],['Responsável','inspector']])html+=`<div><strong>${title}:</strong> ${escape(key==='date'?formattedDate(p[key]):p[key]||'—')}</div>`;html+='</div><p>Registro descritivo baseado nas informações e fotos inseridas durante a vistoria.</p>';state.rooms.forEach((r,i)=>{html+=`<section class="p-room"><h2>${i+1}. ${escape(r.name)}</h2><p>${escape(r.notes)||'Sem observações registradas.'}</p>${reportRoomHighlights(r)}`;r.photos.forEach((photo,j)=>{html+=`<img class="report-photo" src="${escape(photo.data)}" alt="${escape(r.name)} - foto ${j+1}">`});html+='</section>'});html+=`<footer>${acimContacts()}<br><br>Relatório gerado em ${escape(new Date().toLocaleString('pt-BR'))}. As condições descritas devem ser conferidas pelo responsável antes do uso ou assinatura.<br><br>________________________________<br>Responsável pela vistoria</footer>`;$('print').innerHTML=html;$('summary').textContent=`${acimNumber(state)} · Imóvel ${p.code} · ${state.rooms.length} cômodo(s) · ${state.rooms.reduce((n,r)=>n+r.photos.length,0)} foto(s)`}
+function buildReport(report=state){const state=report;const p=state.property;let html=acimHead('Relatório de Vistoria de Imóvel')+`<div class="meta"><div><strong>Número da vistoria:</strong> ${escape(acimNumber(state))}</div><div><strong>Situação:</strong> ${escape(acimStatus(state))}</div>`;for(const [title,key] of [['Endereço','address'],['Proprietário','owner'],['Data e dia','date'],['Horário','time'],['Tipo de imóvel','type'],['Código','code'],['Finalidade','purpose'],['Responsável','inspector']])html+=`<div><strong>${title}:</strong> ${escape(key==='date'?formattedDate(p[key]):p[key]||'—')}</div>`;html+='</div><p>Registro descritivo baseado nas informações e fotos inseridas durante a vistoria.</p>';state.rooms.forEach((r,i)=>{html+=`<section class="p-room"><h2>${i+1}. ${escape(r.name)}</h2><p>${escape(r.notes)||'Sem observações registradas.'}</p>${reportRoomHighlights(r)}`;r.photos.forEach((photo,j)=>{html+=`<img class="report-photo" src="${escape(photo.data)}" alt="${escape(r.name)} - foto ${j+1}">`});html+='</section>'});html+=`<footer>${acimContacts()}<br><br>Relatório gerado em ${escape(new Date().toLocaleString('pt-BR'))}. As condições descritas devem ser conferidas pelo responsável antes do uso ou assinatura.<br><br>________________________________<br>Responsável pela vistoria</footer>`;$('print').innerHTML=html;$('summary').textContent=`${acimNumber(state)} · Imóvel ${p.code} · ${state.rooms.length} cômodo(s) · ${state.rooms.reduce((n,r)=>n+r.photos.length,0)} foto(s)`}
 $('new').onclick=async()=>{if(state.rooms.length&&!confirm('Iniciar uma nova vistoria? O rascunho atual será substituído. Exporte uma cópia se precisar guardá-lo.'))return;if(!await acimArchiveCurrent(state.status||'andamento'))return;state={property:{date:new Date().toLocaleDateString('en-CA')},rooms:[],status:'aguardando',inspectionId:uid(),createdAt:new Date().toISOString()};if(!await persist())return;fillProperty();show('property')};
 $('resume').onclick=()=>{fillProperty();if(state.rooms&&state.rooms.length){renderRooms();show('rooms')}else show(Object.keys(state.property).length?'property':'home')};$('backHome').onclick=async()=>{collectProperty();await persist();show('home')};
 $('toRooms').onclick=async()=>{if(!validateProperty())return;if(state.status!=='finalizada')state.status='andamento';await persist();renderRooms();show('rooms')};$('editProperty').onclick=()=>{fillProperty();show('property')};
@@ -66,7 +66,7 @@ $('saveExit').onclick=async()=>{if(await captureEditor()&&await acimArchiveCurre
 $('deleteRoom').onclick=async()=>{const room=currentRoom();if(!room)return;const hasChild=state.rooms.some(r=>r.parentRoomId===room.id);if(!confirm(hasChild?'Excluir este ambiente, seus destaques e todas as fotos desses registros?':'Excluir este registro e suas fotos?'))return;state.rooms=state.rooms.filter(r=>r.id!==room.id&&r.parentRoomId!==room.id);await persist();renderRooms();show('rooms')};
 $('analyze').onclick=async()=>{const room=currentRoom(),name=$('roomName').value.trim();if(!room?.photos.length)return alert('Adicione fotos deste cômodo antes de analisar.');if(!name)return alert('Informe o nome do cômodo.');if(room.photos.length>12)return alert('A IA aceita até 12 fotos por análise. Divida o registro em áreas menores.');if(room.aiPending)return;room.name=name;room.notes=$('notes').value.trim();collectRoomHighlights(room);const photos=room.photos.map(p=>p.data),notes=room.notes;room.aiPending=true;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),120000);$('analyze').disabled=true;$('aiStatus').textContent='Analisando os detalhes das fotos. Você pode aguardar ou continuar em outro ambiente.';try{const response=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({room:name,detail:$('analysisDetail').value,mode:room.parentRoomId?'highlights':'room',contextDescription:room.parentRoomId?String(state.rooms.find(r=>r.id===room.parentRoomId)?.notes||'').slice(0,10000):'',evidence:room.highlights||{},notes:room.declaredNotes??(room.aiGenerated||/Visível:/.test(notes)?'':notes),photos})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Falha na análise');if(!state.rooms.includes(room))return;const unchanged=room.photos.length===photos.length&&room.photos.every((p,i)=>p.data===photos[i])&&room.name===name&&room.notes===notes&&(!(currentRoom()===room)||$('notes').value.trim()===notes);if(!unchanged){if(currentRoom()===room)$('aiStatus').textContent='O cômodo foi alterado durante a análise. Analise novamente para usar as fotos e observações atuais.';return}room.declaredNotes=room.declaredNotes??(room.aiGenerated||/Visível:/.test(notes)?'':notes);room.notes=data.description;room.analysisStale=false;room.aiGenerated=true;if(currentRoom()===room){$('notes').value=data.description;$('aiStatus').textContent='Descrição criada para este cômodo. Confira e edite antes de finalizar.'}await persist()}catch(e){if(currentRoom()===room)$('aiStatus').textContent=e.name==='AbortError'?'A análise demorou demais. Tente novamente.':'Não foi possível analisar: '+e.message}finally{clearTimeout(timer);delete room.aiPending;if(currentRoom()===room)$('analyze').disabled=false}};
 $('photos').onchange=async e=>{const files=[...e.target.files];if(!files.length)return;const room=await captureEditor();if(!room){e.target.value='';return}$('photos').disabled=true;try{for(const file of files){room.photos.push(await readPhoto(file));room.analysisStale=true;if(!await persist())break}if(currentRoom()===room)renderPhotos()}catch(err){alert('Não foi possível abrir uma das fotos: '+err.message)}finally{$('photos').disabled=false;e.target.value=''}};
-$('finish').onclick=async()=>{if(!state.rooms.length)return alert('Adicione pelo menos um cômodo.');if(state.rooms.some(r=>r.aiPending))return alert('Aguarde a análise das fotos terminar.');const repeated=state.rooms.filter((r,i)=>r.notes?.trim()&&state.rooms.some((x,j)=>j<i&&x.notes?.trim()===r.notes.trim()));if(repeated.length&&!confirm('Há descrições iguais em cômodos diferentes: '+repeated.map(r=>r.name).join(', ')+'. Revise se correspondem às fotos. Continuar?'))return;const pending=state.rooms.filter(r=>!r.notes?.trim()||r.analysisStale);if(pending.length&&!confirm('Confira os ambientes sem descrição ou com fotos alteradas: '+pending.map(r=>r.name).join(', ')+'. Finalizar mesmo assim?'))return;if(!confirm('Finalizar esta vistoria? Você poderá reabrir depois.'))return;if(!await persist()||!await acimArchiveCurrent('finalizada'))return;buildReport();show('result')};$('pdf').onclick=async()=>{try{buildReport();await printReport('print')}catch(e){$('print').classList.remove('print-preparing');alert('Não foi possível preparar o PDF: '+e.message)}};$('editRooms').onclick=()=>{renderRooms();show('rooms')};$('fresh').onclick=()=>$('new').click();
+$('finish').onclick=async()=>{if(!state.rooms.length)return alert('Adicione pelo menos um cômodo.');if(state.rooms.some(r=>r.aiPending))return alert('Aguarde a análise das fotos terminar.');const repeated=state.rooms.filter((r,i)=>r.notes?.trim()&&state.rooms.some((x,j)=>j<i&&x.notes?.trim()===r.notes.trim()));if(repeated.length&&!confirm('Há descrições iguais em cômodos diferentes: '+repeated.map(r=>r.name).join(', ')+'. Revise se correspondem às fotos. Continuar?'))return;const pending=state.rooms.filter(r=>!r.notes?.trim()||r.analysisStale);if(pending.length&&!confirm('Confira os ambientes sem descrição ou com fotos alteradas: '+pending.map(r=>r.name).join(', ')+'. Finalizar mesmo assim?'))return;if(!confirm('Finalizar esta vistoria? Você poderá reabrir depois.'))return;if(!await publishSharedReport()||!await acimArchiveCurrent('finalizada'))return;buildReport();show('result');if(state.sharedRevision)await openSharedRecord(state.inspectionId)};$('pdf').onclick=async()=>{try{buildReport(sharedPreview?.report||state);if(sharedPreview?.history.length){const audit=document.createElement('p');audit.textContent='Último registro: '+auditLabel(sharedPreview.history[0]);$('print').append(audit)}await printReport('print')}catch(e){$('print').classList.remove('print-preparing');alert('Não foi possível preparar o PDF: '+e.message)}};$('editRooms').onclick=async()=>{if(sharedPreview){if(!sharedPreview.editable)return;const row=sharedPreview;if(!await acimArchiveCurrent(state.status||'andamento'))return;state=structuredClone(row.report);state.sharedRevision=row.revision;await persist()}renderRooms();show('rooms')};$('fresh').onclick=()=>$('new').click();
 $('export').onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`vistoria-${state.property.code||'imovel'}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000)};
 let recognition=null;
 $('speak').onclick=()=>{if(recognition){recognition.stop();return}const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){alert('Este navegador não oferece ditado por voz. Use o microfone do teclado Android para escrever por voz.');return}recognition=new SR();recognition.lang='pt-BR';recognition.continuous=true;recognition.interimResults=false;recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)$('notes').value+=($('notes').value?' ':'')+e.results[i][0].transcript};recognition.onerror=e=>{if(e.error!=='no-speech')alert('Falha no reconhecimento de voz: '+e.error)};recognition.onend=()=>{$('speak').textContent='🎙️ Ditar observações';recognition=null};recognition.start();$('speak').textContent='Parar ditado'};
@@ -131,6 +131,7 @@ async function acimArchiveCurrent(status='andamento'){
 }
 async function acimOpenItem(id){
   id=decodeURIComponent(id);const item=acimLoadLibrary().find(x=>x.id===id); if(!item)return;
+  if(item.data?.sharedRevision)return openSharedRecord(id);
   state=JSON.parse(JSON.stringify(item.data||item)); state.inspectionId=item.id;state.sequence=item.sequence||state.sequence;if(item.status==='finalizada'){state.status='finalizada';state.finalizedAt=state.finalizedAt||item.updatedAt||new Date().toISOString()}
   if(await persist()){fillProperty();renderRooms();if(state.status==='finalizada'){buildReport();show('result')}else show('rooms')}
 }
@@ -331,3 +332,57 @@ async function printReport(target){
 window.addEventListener('afterprint',()=>{document.body.classList.remove('compare-print');$('print').replaceChildren();$('comparePrint').replaceChildren()});
 
 $('roomName').addEventListener('input',renderRoomHighlights);
+
+async function sharedRequest(route,payload){
+ const response=await fetch('/api/vistorias/'+route,payload===undefined?{cache:'no-store'}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ const data=await response.json();if(!response.ok)throw new Error(data.error||'Não foi possível acessar o histórico.');
+ return data;
+}
+function auditLabel(entry){return entry.actor+' • '+new Date(entry.at).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})}
+async function publishSharedReport(){
+ const button=$('finish');if(button.disabled)return false;button.disabled=true;
+ try{
+ const info=await sharedRequest('status');
+ if(!info.enabled){
+ if(state.sharedRevision)throw new Error('O histórico central está indisponível. As alterações ainda não foram publicadas.');
+ return confirm('O histórico compartilhado ainda não está configurado. Finalizar somente neste aparelho?');
+ }
+ if(!info.user){alert('Entre com sua conta para finalizar e compartilhar. Seu rascunho está neste aparelho.');await persist();await openSharedHistory();return false}
+ state.inspectionId||=uid();
+ const result=await sharedRequest('registro/'+encodeURIComponent(state.inspectionId),{report:state,revision:state.sharedRevision||0});
+ state.sharedRevision=result.revision;state.finalizedAt=result.finalizedAt;state.property.inspector=result.inspector;
+ return true;
+ }catch(e){alert(e.message);return false}finally{button.disabled=false}
+}
+async function openSharedHistory(){
+ show('sharedHistory');$('sharedStatus').textContent='Carregando…';$('sharedList').replaceChildren();$('sharedLogin').hidden=true;$('sharedLogout').hidden=true;
+ try{
+ const info=await sharedRequest('status');
+ if(!info.enabled){$('sharedStatus').textContent='O histórico compartilhado ainda não foi configurado.';return}
+ if(!info.user){$('sharedStatus').textContent='Entre com sua conta da equipe.';$('sharedLogin').hidden=false;return}
+ $('sharedLogout').hidden=false;$('sharedStatus').textContent='Conta: '+info.user+' • Somente o responsável pode editar.';
+ const {rows}=await sharedRequest('historico');
+ if(!rows.length)$('sharedList').textContent='Nenhuma vistoria compartilhada.';
+ for(const item of rows){
+ const line=document.createElement('div');line.className='room';
+ const label=document.createElement('span');label.textContent=[item.property?.code,item.property?.address,item.property?.inspector].filter(Boolean).join(' • ');
+ const button=document.createElement('button');button.textContent='Abrir laudo';button.className='secondary';
+ button.onclick=()=>openSharedRecord(item.id);
+ line.append(label,button);$('sharedList').append(line);
+ }
+ }catch(e){$('sharedStatus').textContent=e.message}
+}
+$('openSharedHistory').onclick=openSharedHistory;
+$('sharedBack').onclick=()=>show('home');
+$('sharedLogout').onclick=async()=>{try{await sharedRequest('sair',{});await openSharedHistory()}catch(e){alert(e.message)}};
+$('sharedLogin').onsubmit=async e=>{e.preventDefault();try{await sharedRequest('entrar',{login:$('sharedUser').value.trim(),password:$('sharedPassword').value});await openSharedHistory()}catch(err){$('sharedStatus').textContent=err.message}finally{$('sharedPassword').value=''}};
+
+async function openSharedRecord(id){try{
+ const row=await sharedRequest('registro/'+encodeURIComponent(id));
+ show('result');sharedPreview=row;$('backSharedResult').hidden=false;buildReport(row.report);
+ $('editRooms').hidden=!row.editable;$('export').hidden=true;
+ const audit=$('sharedAudit');audit.replaceChildren();
+ const heading=document.createElement('h2');heading.textContent='Histórico de alterações';audit.append(heading);
+ for(const entry of row.history){const p=document.createElement('p');p.textContent=(entry.revision===1?'Finalizada por: ':'Alterada por: ')+auditLabel(entry);audit.append(p)}
+ }catch(e){alert(e.message)}}
+$('backSharedResult').onclick=openSharedHistory;
