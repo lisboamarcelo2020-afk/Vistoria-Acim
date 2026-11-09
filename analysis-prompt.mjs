@@ -1,5 +1,5 @@
 // Pure request builder: the existing server owns the model and API credential.
-export function buildAnalysisInput({room,notes,photos,mode='room',contextDescription='',evidence={}}){
+export function buildAnalysisInput({room,notes,photos,mode='room',contextDescription='',evidence={},detail='detailed'}){
  const isHighlights=mode==='highlights';
  const prompt=`Você redige laudos descritivos de vistoria imobiliária em português do Brasil, para revisão pelo vistoriador.
 REGISTRO EM ANÁLISE: ${JSON.stringify(room)}.
@@ -16,7 +16,7 @@ Organize o descritivo em seções curtas, com o nome deste registro e os seguint
 
 Para cada evidência positiva ou negativa, use referência como Foto 1 ou Fotos 2 e 3. A numeração é somente a ordem das imagens desta solicitação. Não afirme que uma ocorrência aparece em imagem na qual ela não é identificável. Não repita o mesmo achado como ocorrências diferentes quando várias fotos mostrarem o mesmo ponto.
 Não conclua funcionamento, voltagem, estanqueidade, integridade estrutural, causa de manchas ou fissuras, ausência de infiltração nem estado de instalações ocultas. Não atribua causa, responsabilidade, culpa, custo de reparo ou obrigação jurídica. Não invente marcas, idade, medições, testes ou defeitos. Diferencie observação visual, declaração e impossibilidade de verificação.
-${isHighlights?'Busque um descritivo aprofundado, de até cerca de 900 palavras, se as evidências sustentarem esse nível de detalhe.':'Busque um descritivo detalhado, de até cerca de 600 palavras, se as evidências sustentarem esse nível de detalhe.'} Use menos texto quando houver poucos elementos verificáveis. Não acrescente suposições para preencher as seções. Não inclua introdução ou conclusão promocional. O vistoriador revisará o resultado antes do relatório.
+${detail==='very-detailed'?'MUITO DETALHADA: descreva cada elemento verificável com sua localização, acabamento e condição. Diferencie os achados de cada foto e consolide vistas repetidas. Se houver evidência suficiente, escreva até cerca de 1200 palavras no ambiente principal ou 1500 nos destaques.':isHighlights?'Busque um descritivo aprofundado, de até cerca de 900 palavras, se as evidências sustentarem esse nível de detalhe.':'Busque um descritivo detalhado, de até cerca de 600 palavras, se as evidências sustentarem esse nível de detalhe.'} Use menos texto quando houver poucos elementos verificáveis. Não acrescente suposições para preencher as seções. Não inclua introdução ou conclusão promocional. O vistoriador revisará o resultado antes do relatório.
 
 DECLARAÇÕES DO VISTORIADOR, SEM COMPROVAÇÃO AUTOMÁTICA:
 ${JSON.stringify({observacoes:notes||'',evidenciasPositivas:evidence.positive||'',evidenciasNegativas:evidence.negative||''})}
