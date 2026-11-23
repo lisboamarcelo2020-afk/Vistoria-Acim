@@ -16,7 +16,14 @@ const server=http.createServer(async(req,res)=>{
    if(!['detailed','very-detailed'].includes(detail))return send(res,400,{error:'Selecione um nível de detalhe válido.'});
    const input=buildAnalysisInput({room,notes,photos,mode,contextDescription,evidence,detail});
    const upstream=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${process.env.OPENAI_API_KEY}`},body:JSON.stringify({model:process.env.OPENAI_MODEL||'gpt-5',store:false,input:[{role:'user',content:input}],max_output_tokens:8000})});
-   const data=await upstream.json();if(!upstream.ok)return send(res,502,{error:'Serviço de IA indisponível. Verifique a chave, créditos e modelo configurado.'});
+   if(!upstream.ok){
+    const failure=await upstream.json().catch(()=>null);
+    const knownCodes=['invalid_api_key','insufficient_quota','model_not_found','rate_limit_exceeded','billing_hard_limit_reached','invalid_image','invalid_image_format','image_too_large'];
+    const code=knownCodes.includes(failure?.error?.code)?failure.error.code:'outro';
+    console.warn('Falha na análise de fotos: OpenAI HTTP %d, código %s',upstream.status,code);
+    return send(res,502,{error:'Serviço de IA indisponível. Verifique a chave, créditos e modelo configurado.'});
+   }
+   const data=await upstream.json();
    const description=(data.output||[]).flatMap(x=>x.content||[]).filter(x=>x.type==='output_text').map(x=>x.text).join('\n').trim();if(!description)return send(res,502,{error:'A IA não produziu um descritivo. Tente novamente.'});return send(res,200,{description});
   }catch(e){return send(res,500,{error:'Falha ao processar a análise. Tente novamente.'})}
  }
