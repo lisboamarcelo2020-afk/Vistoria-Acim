@@ -28,7 +28,7 @@ const server=http.createServer(async(req,res)=>{
   }catch(e){return send(res,500,{error:'Falha ao processar a análise. Tente novamente.'})}
  }
  if(req.method!=='GET')return send(res,405,{error:'Método não permitido'});
- const path=new URL(req.url,'http://localhost').pathname==='/'?'index.html':decodeURIComponent(new URL(req.url,'http://localhost').pathname.slice(1));
+ const path=new URL(req.url,'http://localhost').pathname.match(/^\/(?:index-vistoria\.html)?$/)?'index.html':decodeURIComponent(new URL(req.url,'http://localhost').pathname.slice(1));
  if(!['index.html','index-vistoria.html','app.js','sw.js','logo.jpg','icon.svg','manifest.webmanifest'].includes(path))return send(res,404,{error:'Arquivo não encontrado'});
  try{const file=resolve(root,path);if(!file.startsWith(resolve(root)+sep))return send(res,403,{error:'Acesso não permitido'});const bytes=await readFile(file);res.writeHead(200,{'Content-Type':types[extname(file)]||'application/octet-stream'});res.end(bytes)}catch(e){send(res,404,{error:'Arquivo não encontrado'})}
 });

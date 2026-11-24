@@ -1,5 +1,5 @@
 'use strict';
-const $=id=>document.getElementById(id), fields=['address','owner','date','time','type','code','purpose','inspector'];
+const $=id=>document.getElementById(id), fields=['address','owner','date','time','type','code','purpose','inspector','streetNumber','inspectionKind'];
 let state={property:{},rooms:[]},editing=-1,db,sharedPreview=null;
 const uid=()=>crypto.randomUUID?.()||String(Date.now()+Math.random());
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -13,12 +13,15 @@ function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('
 function get(key){return new Promise((res,rej)=>{const q=db.transaction('data').objectStore('data').get(key);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 function put(key,val){return new Promise((res,rej)=>{const tx=db.transaction('data','readwrite');tx.objectStore('data').put(val,key);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('Gravação interrompida'))})}
 async function persist(){try{syncHighlightNames();if(state.inspectionId||Object.keys(state.property||{}).length||state.rooms?.length)await acimEnsureNumber(state);await put('draft',JSON.parse(JSON.stringify(state,(k,v)=>k==='aiPending'?undefined:v)));$('resume').disabled=false;return true}catch(e){alert('Não foi possível salvar os dados neste aparelho. Exporte uma cópia antes de sair.');return false}}
-function fillProperty(){fields.forEach(f=>$(f).value=state.property[f]||'');const locked=state.status==='finalizada'||!!state.finalizedAt;$('code').readOnly=locked;$('code').setAttribute('aria-readonly',String(locked));$('codeHint').textContent=locked?'Código bloqueado: esta vistoria já foi finalizada.':'Pode ser alterado até a finalização.';$('inspectionNumber').textContent=acimNumber(state);$('inspectionStatus').value=state.status==='finalizada'?'finalizada':state.status==='aguardando'?'aguardando':'andamento';$('inspectionStatus').disabled=locked}
+function fillProperty(){fields.forEach(f=>{if($(f))$(f).value=state.property[f]||''});const locked=state.status==='finalizada'||!!state.finalizedAt;$('code').readOnly=locked;$('code').setAttribute('aria-readonly',String(locked));$('codeHint').textContent=locked?'Código bloqueado: esta vistoria já foi finalizada.':'Pode ser alterado até a finalização.';$('inspectionNumber').textContent=acimNumber(state);$('inspectionStatus').value=state.status==='finalizada'?'finalizada':state.status==='aguardando'?'aguardando':'andamento';$('inspectionStatus').disabled=locked}
 
-function collectProperty(){fields.forEach(f=>{if(f==='code'&&(state.status==='finalizada'||state.finalizedAt))return;state.property[f]=$(f).value.trim()});if(state.status!=='finalizada'&&!state.finalizedAt)state.status=$('inspectionStatus').value}
-function validateProperty(){collectProperty();for(const f of ['address','owner','date','type','code','purpose'])if(!state.property[f]){alert('Preencha os campos obrigatórios.');$(f).focus();return false}return true}
-function renderRooms(){const out=$('roomList');out.innerHTML='';state.rooms.forEach((r,i)=>{const d=document.createElement('div');d.className='room';if(r.parentRoomId)d.style.marginLeft='18px';const label=document.createElement('span');label.textContent=`${i+1}. ${r.name||'Sem nome'} · ${r.photos.length} foto(s)`;const b=document.createElement('button');b.className='secondary';b.textContent='Editar';b.onclick=()=>openEditor(i);d.append(label,b);out.append(d)});if(!state.rooms.length)out.innerHTML='<p class="hint">Nenhum cômodo registrado ainda.</p>'}
-function openEditor(i){editing=i;$('editorTitle').textContent=i<0?'Novo cômodo':state.rooms[i].parentRoomId?state.rooms[i].name:`Editar cômodo ${i+1}`;$('roomName').value=i<0?'':state.rooms[i].name;$('notes').value=i<0?'':state.rooms[i].notes;$('highlightPositive').value=i<0?'':state.rooms[i].highlights?.positive||'';$('highlightNegative').value=i<0?'':state.rooms[i].highlights?.negative||'';$('analyze').disabled=!!state.rooms[i]?.aiPending;$('aiStatus').textContent='Analise somente fotos deste ambiente e revise a descrição.';$('photos').value='';$('deleteRoom').classList.toggle('hidden',i<0);const parent=state.rooms.find(r=>r.id===currentRoom()?.parentRoomId);$('roomName').readOnly=!!parent;$('backToParentRoom').classList.toggle('hidden',!parent);$('parentDescription').classList.toggle('hidden',!parent);$('parentDescriptionText').textContent=parent?.notes||'Sem descrição registrada no ambiente principal.';renderPhotos();show('editor')}
+function collectProperty(){fields.forEach(f=>{if(!$(f))return;if(f==='code'&&(state.status==='finalizada'||state.finalizedAt))return;state.property[f]=$(f).value.trim()});if(state.status!=='finalizada'&&!state.finalizedAt)state.status=$('inspectionStatus').value}
+function validateProperty(){collectProperty();for(const f of propertyRequirements(state))if(!state.property[f]){alert('Preencha os campos obrigatórios, incluindo o número (ou S/N) e o tipo de vistoria nos novos registros.');$(f).focus();return false}return true}
+function propertyRequirements(report){
+ return ['address','owner','date','type','code','purpose',...(report.itemWorkflow?['streetNumber','inspectionKind','inspector']:[])];
+}
+function renderRooms(){refreshInspectionReview();const out=$('roomList');out.innerHTML='';state.rooms.forEach((r,i)=>{const d=document.createElement('div');d.className='room';if(r.parentRoomId)d.style.marginLeft='18px';const label=document.createElement('span');label.textContent=`${i+1}. ${r.name||'Sem nome'} · ${r.photos.length} foto(s) · ${r.items?.length||0} item(ns)`;const b=document.createElement('button');b.className='secondary';b.textContent='Editar';b.onclick=()=>openEditor(i);d.append(label,b);out.append(d)});if(!state.rooms.length)out.innerHTML='<p class="hint">Nenhum cômodo registrado ainda.</p>'}
+function openEditor(i){editing=i;$('editorTitle').textContent=i<0?'Novo cômodo':state.rooms[i].parentRoomId?state.rooms[i].name:`Editar cômodo ${i+1}`;$('roomName').value=i<0?'':state.rooms[i].name;$('notes').value=i<0?'':state.rooms[i].notes;$('highlightPositive').value=i<0?'':state.rooms[i].highlights?.positive||'';$('highlightNegative').value=i<0?'':state.rooms[i].highlights?.negative||'';$('analyze').disabled=!!state.rooms[i]?.aiPending;$('aiStatus').textContent='Analise somente fotos deste ambiente e revise a descrição.';$('photos').value='';$('deleteRoom').classList.toggle('hidden',i<0);const parent=state.rooms.find(r=>r.id===currentRoom()?.parentRoomId);$('roomName').readOnly=!!parent;$('backToParentRoom').classList.toggle('hidden',!parent);$('parentDescription').classList.toggle('hidden',!parent);$('parentDescriptionText').textContent=parent?.notes||'Sem descrição registrada no ambiente principal.';renderPhotos();renderItems();renderSuggestion();show('editor')}
 function currentRoom(){return editing<0?null:state.rooms[editing]}
 function collectRoomHighlights(room){if(!room.parentRoomId)return;room.highlights={positive:$('highlightPositive').value.trim(),negative:$('highlightNegative').value.trim()}}
 function syncHighlightNames(){for(const room of state.rooms||[]){if(!room.parentRoomId)continue;const parent=state.rooms.find(r=>r.id===room.parentRoomId);if(parent)room.name=parent.name+' — DESTAQUES'}}
@@ -50,12 +53,16 @@ function reportRoomHighlights(room){
   (negative?`<p><strong>Evidências negativas / pontos de atenção:</strong> ${escape(negative)}</p>`:'');
 }
 
-function renderPhotos(){const el=$('photoList');el.innerHTML='';const room=currentRoom();(room?.photos||[]).forEach((p,i)=>{const d=document.createElement('div');d.className='photo';const img=document.createElement('img');img.src=p.thumbnail||p.data;img.loading='lazy';img.alt=`Foto ${i+1}`;const b=document.createElement('button');b.textContent='×';b.setAttribute('aria-label','Excluir foto');b.onclick=async()=>{if(!confirm('Excluir esta foto?'))return;room.photos.splice(i,1);room.analysisStale=true;await persist();renderPhotos()};d.append(img,b);el.append(d)});renderRoomHighlights()}
+function renderPhotos(){const el=$('photoList');el.innerHTML='';const room=currentRoom();(room?.photos||[]).forEach((p,i)=>{const d=document.createElement('div');d.className='photo';const img=document.createElement('img');img.src=p.thumbnail||p.data;img.loading='lazy';img.alt=`Foto ${i+1}`;const b=document.createElement('button');b.textContent='×';b.setAttribute('aria-label','Excluir foto');b.onclick=async()=>{if(!confirm('Excluir esta foto?'))return;const photo=room.photos[i];
+ if(photo.id&&room.items?.some(item=>item.photoIds?.includes(photo.id))){
+  alert('Retire o vínculo com o item vistoriado antes de excluir esta foto.');return;
+ }
+ room.photos.splice(i,1);room.analysisStale=true;await persist();renderPhotos();renderSuggestion()};d.append(img,b);el.append(d)});renderRoomHighlights()}
 async function saveRoom(next){if(!await captureEditor())return;renderRooms();next?openEditor(-1):show('rooms')}
 async function readPhoto(file){let source,url;const canvas=document.createElement('canvas');try{if(window.createImageBitmap){try{source=await createImageBitmap(file,{resizeWidth:1600,resizeQuality:'high'})}catch{}}if(!source){url=URL.createObjectURL(file);source=await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('Imagem incompatível. Use JPEG ou PNG.'));img.src=url})}const scale=Math.min(1,1600/source.width,1600/source.height);canvas.width=Math.max(1,Math.round(source.width*scale));canvas.height=Math.max(1,Math.round(source.height*scale));canvas.getContext('2d').drawImage(source,0,0,canvas.width,canvas.height);const data=canvas.toDataURL('image/jpeg',.78),width=canvas.width,height=canvas.height;canvas.width=240;canvas.height=Math.max(1,Math.round(240*height/width));canvas.getContext('2d').drawImage(source,0,0,canvas.width,canvas.height);return {data,thumbnail:canvas.toDataURL('image/jpeg',.65),width,height,name:file.name}}finally{source?.close?.();if(url)URL.revokeObjectURL(url);canvas.width=canvas.height=1}}
 function formattedDate(s){if(!s)return '';const [y,m,d]=s.split('-').map(Number);return new Intl.DateTimeFormat('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(y,m-1,d))}
-function buildReport(report=state){const state=report;const p=state.property;let html=acimHead('Relatório de Vistoria de Imóvel')+`<div class="meta"><div><strong>Número da vistoria:</strong> ${escape(acimNumber(state))}</div><div><strong>Situação:</strong> ${escape(acimStatus(state))}</div>`;for(const [title,key] of [['Endereço','address'],['Proprietário','owner'],['Data e dia','date'],['Horário','time'],['Tipo de imóvel','type'],['Código','code'],['Finalidade','purpose'],['Responsável','inspector']])html+=`<div><strong>${title}:</strong> ${escape(key==='date'?formattedDate(p[key]):p[key]||'—')}</div>`;html+='</div><p>Registro descritivo baseado nas informações e fotos inseridas durante a vistoria.</p>';state.rooms.forEach((r,i)=>{html+=`<section class="p-room"><h2>${i+1}. ${escape(r.name)}</h2><p>${escape(r.notes)||'Sem observações registradas.'}</p>${reportRoomHighlights(r)}`;r.photos.forEach((photo,j)=>{html+=`<img class="report-photo" src="${escape(photo.data)}" alt="${escape(r.name)} - foto ${j+1}">`});html+='</section>'});html+=`<footer>${acimContacts()}<br><br>Relatório gerado em ${escape(new Date().toLocaleString('pt-BR'))}. As condições descritas devem ser conferidas pelo responsável antes do uso ou assinatura.<br><br>________________________________<br>Responsável pela vistoria</footer>`;$('print').innerHTML=html;$('summary').textContent=`${acimNumber(state)} · Imóvel ${p.code} · ${state.rooms.length} cômodo(s) · ${state.rooms.reduce((n,r)=>n+r.photos.length,0)} foto(s)`}
-$('new').onclick=async()=>{if(state.rooms.length&&!confirm('Iniciar uma nova vistoria? O rascunho atual será substituído. Exporte uma cópia se precisar guardá-lo.'))return;if(!await acimArchiveCurrent(state.status||'andamento'))return;state={property:{date:new Date().toLocaleDateString('en-CA')},rooms:[],status:'aguardando',inspectionId:uid(),createdAt:new Date().toISOString()};if(!await persist())return;fillProperty();show('property')};
+function buildReport(report=state){const state=report;const p=state.property;let html=acimHead('Relatório de Vistoria de Imóvel')+`<div class="meta"><div><strong>Número da vistoria:</strong> ${escape(acimNumber(state))}</div><div><strong>Situação:</strong> ${escape(acimStatus(state))}</div>`;for(const [title,key] of [['Endereço','address'],['Número','streetNumber'],['Tipo de vistoria','inspectionKind'],['Proprietário','owner'],['Data e dia','date'],['Horário','time'],['Tipo de imóvel','type'],['Código','code'],['Finalidade','purpose'],['Responsável','inspector']])html+=`<div><strong>${title}:</strong> ${escape(key==='date'?formattedDate(p[key]):p[key]||'—')}</div>`;html+='</div><p>Registro descritivo baseado nas informações e fotos inseridas durante a vistoria.</p>';state.rooms.forEach((r,i)=>{html+=`<section class="p-room"><h2>${i+1}. ${escape(r.name)}</h2><p>${escape(r.notes)||'Sem observações registradas.'}</p>${reportRoomHighlights(r)}`;r.photos.forEach((photo,j)=>{html+=`<img class="report-photo" src="${escape(photo.data)}" alt="${escape(r.name)} - foto ${j+1}">`});html+='</section>'+reportItems(r)});html+=itemSummary(state)+`<footer>${acimContacts()}<br><br>Relatório gerado em ${escape(new Date().toLocaleString('pt-BR'))}. As condições descritas devem ser conferidas pelo responsável antes do uso ou assinatura.<br><br>________________________________<br>Responsável pela vistoria</footer>`;$('print').innerHTML=html;$('summary').textContent=`${acimNumber(state)} · Imóvel ${p.code} · ${state.rooms.length} cômodo(s) · ${state.rooms.reduce((n,r)=>n+r.photos.length,0)} foto(s)`}
+$('new').onclick=async()=>{if(state.rooms.length&&!confirm('Iniciar uma nova vistoria? O rascunho atual será substituído. Exporte uma cópia se precisar guardá-lo.'))return;if(!await acimArchiveCurrent(state.status||'andamento'))return;state={property:{date:new Date().toLocaleDateString('en-CA')},rooms:[],status:'aguardando',inspectionId:uid(),itemWorkflow:true,createdAt:new Date().toISOString()};if(!await persist())return;fillProperty();show('property')};
 $('resume').onclick=()=>acimShowLibrary('open','Vistorias em aberto');$('backHome').onclick=async()=>{collectProperty();await persist();show('home')};
 $('toRooms').onclick=async()=>{if(!validateProperty())return;if(state.status!=='finalizada')state.status='andamento';await persist();renderRooms();show('rooms')};$('editProperty').onclick=()=>{fillProperty();show('property')};
 $('addRoom').onclick=()=>openEditor(-1);$('saveNext').onclick=()=>saveRoom(true);$('saveBack').onclick=()=>saveRoom(false);
@@ -64,9 +71,21 @@ $('saveExitRooms').onclick=async()=>{if(await persist()&&await acimArchiveCurren
 $('saveExit').onclick=async()=>{if(await captureEditor()&&await acimArchiveCurrent(state.status||'andamento'))show('home')};
 
 $('deleteRoom').onclick=async()=>{const room=currentRoom();if(!room)return;const hasChild=state.rooms.some(r=>r.parentRoomId===room.id);if(!confirm(hasChild?'Excluir este ambiente, seus destaques e todas as fotos desses registros?':'Excluir este registro e suas fotos?'))return;state.rooms=state.rooms.filter(r=>r.id!==room.id&&r.parentRoomId!==room.id);await persist();renderRooms();show('rooms')};
-$('analyze').onclick=async()=>{const room=currentRoom(),name=$('roomName').value.trim();if(!room?.photos.length)return alert('Adicione fotos deste cômodo antes de analisar.');if(!name)return alert('Informe o nome do cômodo.');if(room.photos.length>12)return alert('A IA aceita até 12 fotos por análise. Divida o registro em áreas menores.');if(room.aiPending)return;room.name=name;room.notes=$('notes').value.trim();collectRoomHighlights(room);const photos=room.photos.map(p=>p.data),notes=room.notes;room.aiPending=true;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),120000);$('analyze').disabled=true;$('aiStatus').textContent='Analisando os detalhes das fotos. Você pode aguardar ou continuar em outro ambiente.';try{const response=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({room:name,detail:$('analysisDetail').value,mode:room.parentRoomId?'highlights':'room',contextDescription:room.parentRoomId?String(state.rooms.find(r=>r.id===room.parentRoomId)?.notes||'').slice(0,10000):'',evidence:room.highlights||{},notes:room.declaredNotes??(room.aiGenerated||/Visível:/.test(notes)?'':notes),photos})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Falha na análise');if(!state.rooms.includes(room))return;const unchanged=room.photos.length===photos.length&&room.photos.every((p,i)=>p.data===photos[i])&&room.name===name&&room.notes===notes&&(!(currentRoom()===room)||$('notes').value.trim()===notes);if(!unchanged){if(currentRoom()===room)$('aiStatus').textContent='O cômodo foi alterado durante a análise. Analise novamente para usar as fotos e observações atuais.';return}room.declaredNotes=room.declaredNotes??(room.aiGenerated||/Visível:/.test(notes)?'':notes);room.notes=data.description;room.analysisStale=false;room.aiGenerated=true;if(currentRoom()===room){$('notes').value=data.description;$('aiStatus').textContent='Descrição criada para este cômodo. Confira e edite antes de finalizar.'}await persist()}catch(e){if(currentRoom()===room)$('aiStatus').textContent=e.name==='AbortError'?'A análise demorou demais. Tente novamente.':'Não foi possível analisar: '+e.message}finally{clearTimeout(timer);delete room.aiPending;if(currentRoom()===room)$('analyze').disabled=false}};
-$('photos').onchange=async e=>{const files=[...e.target.files];if(!files.length)return;const room=await captureEditor();if(!room){e.target.value='';return}$('photos').disabled=true;try{for(const file of files){room.photos.push(await readPhoto(file));room.analysisStale=true;if(!await persist())break}if(currentRoom()===room)renderPhotos()}catch(err){alert('Não foi possível abrir uma das fotos: '+err.message)}finally{$('photos').disabled=false;e.target.value=''}};
-$('finish').onclick=async()=>{if(!state.rooms.length)return alert('Adicione pelo menos um cômodo.');if(state.rooms.some(r=>r.aiPending))return alert('Aguarde a análise das fotos terminar.');const repeated=state.rooms.filter((r,i)=>r.notes?.trim()&&state.rooms.some((x,j)=>j<i&&x.notes?.trim()===r.notes.trim()));if(repeated.length&&!confirm('Há descrições iguais em cômodos diferentes: '+repeated.map(r=>r.name).join(', ')+'. Revise se correspondem às fotos. Continuar?'))return;const pending=state.rooms.filter(r=>!r.notes?.trim()||r.analysisStale);if(pending.length&&!confirm('Confira os ambientes sem descrição ou com fotos alteradas: '+pending.map(r=>r.name).join(', ')+'. Finalizar mesmo assim?'))return;if(!confirm('Finalizar esta vistoria? Você poderá reabrir depois.'))return;if(!await publishSharedReport()||!await acimArchiveCurrent('finalizada'))return;buildReport();show('result');if(state.sharedRevision)await openSharedRecord(state.inspectionId)};$('pdf').onclick=async()=>{try{buildReport(sharedPreview?.report||state);if(sharedPreview?.history.length){const audit=document.createElement('p');audit.textContent='Último registro: '+auditLabel(sharedPreview.history[0]);$('print').append(audit)}await printReport('print')}catch(e){$('print').classList.remove('print-preparing');alert('Não foi possível preparar o PDF: '+e.message)}};$('editRooms').onclick=async()=>{if(sharedPreview){if(!sharedPreview.editable)return;const row=sharedPreview;if(!await acimArchiveCurrent(state.status||'andamento'))return;state=structuredClone(row.report);state.sharedRevision=row.revision;await persist()}renderRooms();show('rooms')};$('fresh').onclick=()=>$('new').click();
+$('analyze').onclick=async()=>{const room=currentRoom(),name=$('roomName').value.trim();if(!room?.photos.length)return alert('Adicione fotos deste cômodo antes de analisar.');if(!name)return alert('Informe o nome do cômodo.');if(room.photos.length>12)return alert('A IA aceita até 12 fotos por análise. Divida o registro em áreas menores.');if(room.aiPending)return;room.name=name;room.notes=$('notes').value.trim();collectRoomHighlights(room);const photos=room.photos.map(p=>p.data),notes=room.notes;room.aiPending=true;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),120000);$('analyze').disabled=true;$('aiStatus').textContent='Analisando os detalhes das fotos. Você pode aguardar ou continuar em outro ambiente.';try{const response=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({room:name,detail:$('analysisDetail').value,mode:room.parentRoomId?'highlights':'room',contextDescription:room.parentRoomId?String(state.rooms.find(r=>r.id===room.parentRoomId)?.notes||'').slice(0,10000):'',evidence:room.highlights||{},notes:room.declaredNotes??(room.aiGenerated||/Visível:/.test(notes)?'':notes),photos})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Falha na análise');if(!state.rooms.includes(room))return;const unchanged=room.photos.length===photos.length&&room.photos.every((p,i)=>p.data===photos[i])&&room.name===name&&room.notes===notes&&(!(currentRoom()===room)||$('notes').value.trim()===notes);if(!unchanged){if(currentRoom()===room)$('aiStatus').textContent='O cômodo foi alterado durante a análise. Analise novamente para usar as fotos e observações atuais.';return}room.aiSuggestion={text:data.description,notes,photoStamp:photoStamp(room)};
+if(currentRoom()===room){
+ renderSuggestion();
+ $('aiStatus').textContent='Sugestão disponível. Revise e escolha se deseja usar ou descartar.';
+}await persist()}catch(e){if(currentRoom()===room)$('aiStatus').textContent=e.name==='AbortError'?'A análise demorou demais. Tente novamente.':'Não foi possível analisar: '+e.message}finally{clearTimeout(timer);delete room.aiPending;if(currentRoom()===room)$('analyze').disabled=false}};
+$('photos').onchange=async e=>{const files=[...e.target.files];if(!files.length)return;const room=await captureEditor();if(!room){e.target.value='';return}$('photos').disabled=true;try{for(const file of files){room.photos.push({id:uid(),...await readPhoto(file)});room.analysisStale=true;if(!await persist())break}if(currentRoom()===room)renderPhotos()}catch(err){alert('Não foi possível abrir uma das fotos: '+err.message)}finally{$('photos').disabled=false;e.target.value=''}};
+$('finish').onclick=async()=>{if(!state.rooms.length)return alert('Adicione pelo menos um cômodo.');
+if(state.itemWorkflow&&propertyRequirements(state).some(field=>!state.property[field])){
+ fillProperty();show('property');validateProperty();return;
+}
+const unreviewed=state.rooms.filter(room=>room.aiSuggestion);
+if(unreviewed.length)return alert('Revise ou descarte a sugestão da IA em: '+unreviewed.map(room=>room.name).join(', ')+'.');
+const emptyItems=missingItemRooms();
+if(emptyItems.length&&!confirm('Ambientes sem itens vistoriados: '+emptyItems.map(room=>room.name).join(', ')+'. Finalizar assim?'))return;
+if(state.rooms.some(r=>r.aiPending))return alert('Aguarde a análise das fotos terminar.');const repeated=state.rooms.filter((r,i)=>r.notes?.trim()&&state.rooms.some((x,j)=>j<i&&x.notes?.trim()===r.notes.trim()));if(repeated.length&&!confirm('Há descrições iguais em cômodos diferentes: '+repeated.map(r=>r.name).join(', ')+'. Revise se correspondem às fotos. Continuar?'))return;const pending=state.rooms.filter(r=>(!r.notes?.trim()&&!r.items?.length)||(r.aiGenerated&&r.analysisStale));if(pending.length&&!confirm('Confira os ambientes sem descrição ou com fotos alteradas: '+pending.map(r=>r.name).join(', ')+'. Finalizar mesmo assim?'))return;if(!confirm('Finalizar esta vistoria? Você poderá reabrir depois.'))return;if(!await publishSharedReport()||!await acimArchiveCurrent('finalizada'))return;buildReport();show('result');if(state.sharedRevision)await openSharedRecord(state.inspectionId)};$('pdf').onclick=async()=>{try{buildReport(sharedPreview?.report||state);if(sharedPreview?.history.length){const audit=document.createElement('p');audit.textContent='Último registro: '+auditLabel(sharedPreview.history[0]);$('print').append(audit)}await printReport('print')}catch(e){$('print').classList.remove('print-preparing');alert('Não foi possível preparar o PDF: '+e.message)}};$('editRooms').onclick=async()=>{if(sharedPreview){if(!sharedPreview.editable)return;const row=sharedPreview;if(!await acimArchiveCurrent(state.status||'andamento'))return;state=structuredClone(row.report);state.sharedRevision=row.revision;await persist()}renderRooms();show('rooms')};$('fresh').onclick=()=>$('new').click();
 $('export').onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`vistoria-${state.property.code||'imovel'}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000)};
 let recognition=null;
 $('speak').onclick=()=>{if(recognition){recognition.stop();return}const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){alert('Este navegador não oferece ditado por voz. Use o microfone do teclado Android para escrever por voz.');return}recognition=new SR();recognition.lang='pt-BR';recognition.continuous=true;recognition.interimResults=false;recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)$('notes').value+=($('notes').value?' ':'')+e.results[i][0].transcript};recognition.onerror=e=>{if(e.error!=='no-speech')alert('Falha no reconhecimento de voz: '+e.error)};recognition.onend=()=>{$('speak').textContent='🎙️ Ditar observações';recognition=null};recognition.start();$('speak').textContent='Parar ditado'};
@@ -166,7 +185,7 @@ $('inspectionSearch')?.addEventListener('input',()=>acimRenderLibrary(window.__a
 $('libraryBack')?.addEventListener('click',()=>show('home'));
 $('openPending')?.addEventListener('click',()=>acimShowLibrary('all','Todas as vistorias'));
 $('openHistory')?.addEventListener('click',()=>acimShowLibrary('finalizada','Vistorias finalizadas / Histórico'));
-$('newInspection')?.addEventListener('click',()=>{acimArchiveCurrent(state.status||'andamento'); state={property:{},rooms:[],inspectionId:acimInspectionId()};persist();fillProperty();show('property')});
+$('newInspection')?.addEventListener('click',()=>{acimArchiveCurrent(state.status||'andamento'); state={property:{},rooms:[],inspectionId:acimInspectionId(),itemWorkflow:true};persist();fillProperty();show('property')});
 
 
 
@@ -209,8 +228,8 @@ function renderComparison(a,b){
     <label>Classificação da alteração</label><select class="cmpClass">${opts.map(o=>`<option ${o===def?'selected':''}>${o}</option>`).join('')}</select>
     <label>Observação comparativa do vistoriador</label><textarea class="cmpNote" placeholder="Descreva diferenças, reparos, desgaste ou outros pontos observados."></textarea>
     <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px">
-    <article style="min-width:0;padding:10px;border:1px solid #ddd;border-radius:10px"><strong>Anterior — ${escape(a.property?.date||'')}</strong><p style="white-space:pre-wrap">${escape(x?.notes||'Sem observações.')}</p>${reportRoomHighlights(x)}${photos(x)}</article>
-    <article style="min-width:0;padding:10px;border:1px solid #ddd;border-radius:10px"><strong>Atual — ${escape(b.property?.date||'')}</strong><p style="white-space:pre-wrap">${escape(y?.notes||'Sem observações.')}</p>${reportRoomHighlights(y)}${photos(y)}</article>
+    <article style="min-width:0;padding:10px;border:1px solid #ddd;border-radius:10px"><strong>Anterior — ${escape(a.property?.date||'')}</strong><p style="white-space:pre-wrap">${escape(x?.notes||'Sem observações.')}</p>${reportRoomHighlights(x)}${reportItems(x,false)}${photos(x)}</article>
+    <article style="min-width:0;padding:10px;border:1px solid #ddd;border-radius:10px"><strong>Atual — ${escape(b.property?.date||'')}</strong><p style="white-space:pre-wrap">${escape(y?.notes||'Sem observações.')}</p>${reportRoomHighlights(y)}${reportItems(y,false)}${photos(y)}</article>
     </div></section>`}).join('')+
   `<section class="card"><h2>Resumo Geral da Vistoria Comparativa</h2>
   <textarea id="generalSummary" style="min-height:180px">${escape(summaryText(names,ra,rb))}</textarea>
@@ -238,11 +257,11 @@ function comparisonPdf(a,b,names,ra,rb){
   names.forEach((n,i)=>{const x=find(ra,n),y=find(rb,n),card=cards[i],cl=card?.querySelector('.cmpClass')?.value||'',note=card?.querySelector('.cmpNote')?.value||'';
     h+=`<section class="p-room"><h2>${escape(y?.name||x?.name||n)}</h2><p><strong>Classificação:</strong> ${escape(cl)}</p>${note?`<p><strong>Observação comparativa:</strong> ${escape(note)}</p>`:''}
     <h3>Registro anterior</h3><p>${escape(x?.notes||'Sem observações.')}</p>${reportRoomHighlights(x)}${imgs(x)}
-    <h3>Registro atual</h3><p>${escape(y?.notes||'Sem observações.')}</p>${reportRoomHighlights(y)}${imgs(y)}</section>`});
+    <h3>Registro atual</h3><p>${escape(y?.notes||'Sem observações.')}</p>${reportRoomHighlights(y)}${imgs(y)}</section>${reportItems(x,true,'Anterior')}${reportItems(y,true,'Atual')}`});
   h+=`<section class="p-room"><h2>Resumo Geral da Vistoria Comparativa</h2><p>${escape($('generalSummary')?.value||'')}</p>
   <h3>Observações finais do vistoriador</h3><p>${escape($('finalCmpNotes')?.value||'Sem observações finais.')}</p></section>
   <footer>${acimContacts()}<br><br>Responsável: ${escape($('cmpInspector')?.value||'—')}<br>Relatório gerado em ${escape(new Date().toLocaleString('pt-BR'))}.<br><br>________________________________<br>Assinatura do responsável pela vistoria</footer>`;
-  $('comparePrint').innerHTML=h;document.body.classList.add('compare-print');
+  $('comparePrint').dataset.code=b.property?.code||a.property?.code||'ACIM';$('comparePrint').innerHTML=h;document.body.classList.add('compare-print');
   printReport('comparePrint');
 }
 // Captura dentro do aplicativo, sem abrir a câmera externa do Android.
@@ -290,7 +309,7 @@ function comparisonPdf(a,b,names,ra,rb){
       const thumbnail=canvas.toDataURL('image/jpeg',.65);
       // Libera a câmera antes de salvar e renderizar as fotos.
       stop();
-      target.photos.push({data,thumbnail,width,height,name:'foto-'+Date.now()+'.jpg'});target.analysisStale=true;
+      target.photos.push({id:uid(),data,thumbnail,width,height,name:'foto-'+Date.now()+'.jpg'});target.analysisStale=true;
       await persist();if(currentRoom()===target)renderPhotos();
     }catch(error){stop();alert('Não foi possível salvar a foto. Use Escolher arquivos e tente novamente.')}finally{canvas.width=canvas.height=1;busy=false}
   };
@@ -298,7 +317,7 @@ function comparisonPdf(a,b,names,ra,rb){
 
 async function captureEditor(){const name=$('roomName').value.trim();if(!name){alert('Informe o nome do cômodo antes de adicionar fotos.');return null}let room=currentRoom();if(!room){room={id:uid(),name,notes:$('notes').value.trim(),photos:[]};state.rooms.push(room);editing=state.rooms.length-1;$('deleteRoom').classList.remove('hidden')}else{if(room.name!==name)room.analysisStale=true;room.name=name;room.notes=$('notes').value.trim()}collectRoomHighlights(room);renderRoomHighlights();return await persist()?room:null}
 let autosaveTimer;
-for(const id of ['roomName','notes','highlightPositive','highlightNegative',...fields])$(id).addEventListener('input',()=>{clearTimeout(autosaveTimer);autosaveTimer=setTimeout(async()=>{if(!$('editor').classList.contains('hidden'))await captureEditor();else if(!$('property').classList.contains('hidden')){collectProperty();await persist()}},500)});
+for(const id of ['roomName','notes','highlightPositive','highlightNegative',...fields])$(id)?.addEventListener('input',()=>{clearTimeout(autosaveTimer);autosaveTimer=setTimeout(async()=>{if(!$('editor').classList.contains('hidden'))await captureEditor();else if(!$('property').classList.contains('hidden')){collectProperty();await persist()}},500)});
 
 async function printReport(target){
  const root=$(target),other=target==='print'?'comparePrint':'print';$(other).replaceChildren();
@@ -326,7 +345,7 @@ async function printReport(target){
    part++;if(remaining||photoIndex<photos.length)newPage();
   }while(remaining||photoIndex<photos.length);
  }
- const pages=[...root.querySelectorAll('.report-page')];pages.forEach((p,i)=>p.querySelector('.page-number').textContent=`${state.property.code||'ACIM'} • Página ${i+1} de ${pages.length}`);
+ const pages=[...root.querySelectorAll('.report-page')];pages.forEach((p,i)=>p.querySelector('.page-number').textContent=`${(target==='print'?sharedPreview?.report?.property.code:null)||root.dataset.code||state.property.code||'ACIM'} • Página ${i+1} de ${pages.length}`);
  root.classList.remove('print-preparing');
  document.body.classList.toggle('compare-print',target==='comparePrint');
  await Promise.all([...root.querySelectorAll('img')].map(img=>img.decode().catch(()=>{})));
@@ -389,3 +408,187 @@ async function openSharedRecord(id){try{
  for(const entry of row.history){const p=document.createElement('p');p.textContent=(entry.revision===1?'Finalizada por: ':'Alterada por: ')+auditLabel(entry);audit.append(p)}
  }catch(e){alert(e.message)}}
 $('backSharedResult').onclick=openSharedHistory;
+
+let activeItem = null;
+
+function renderItems() {
+ const room = currentRoom();
+ const list = $('itemList');
+ list.replaceChildren();
+ $('inspectionItems').hidden = !!room?.parentRoomId;
+ for (const item of room?.items || []) {
+  const row = document.createElement('div');
+  row.className = 'room';
+  const text = document.createElement('span');
+  text.textContent = [item.name, item.location, item.condition, item.test].join(' · ');
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.className = 'secondary';
+  edit.textContent = 'Editar';
+  edit.onclick = () => openItem(room, item);
+  row.append(text, edit);
+  list.append(row);
+ }
+}
+
+function openItem(room, item) {
+ activeItem = {room, item};
+ const fields = {itemName:'name',itemLocation:'location',itemCondition:'condition',itemTest:'test',itemNote:'note',itemHighlight:'highlight'};
+ for (const [id, key] of Object.entries(fields)) $(id).value = item?.[key] || '';
+ $('deleteItem').hidden = !item;
+ const photos = $('itemPhotos');
+ photos.replaceChildren();
+ if (!room.photos.length) photos.textContent = 'Nenhuma foto no cômodo. Você pode vincular uma foto depois.';
+ room.photos.forEach((photo, index) => {
+  photo.id ||= uid();
+  const label = document.createElement('label');
+  label.style.cssText = 'display:flex;align-items:center;gap:8px';
+  const field = document.createElement('input');
+  field.type = 'checkbox';
+  field.style.width = 'auto';
+  field.value = photo.id;
+  field.checked = item?.photoIds?.includes(photo.id) || false;
+  const thumb = document.createElement('img');
+  thumb.src = photo.thumbnail || photo.data;
+  thumb.alt = '';
+  thumb.style.cssText = 'width:72px;height:54px;object-fit:cover';
+  label.append(field, thumb, 'Foto ' + (index + 1));
+  photos.append(label);
+ });
+ $('itemDialog').showModal();
+}
+
+$('addItem').onclick = async () => {
+ if ($('addItem').disabled) return;
+ $('addItem').disabled = true;
+ try {
+  const room = await captureEditor();
+  if (room && currentRoom() === room && !$('editor').classList.contains('hidden')) openItem(room);
+ } finally {
+  $('addItem').disabled = false;
+ }
+};
+$('cancelItem').onclick = () => $('itemDialog').close();
+$('itemDialog').addEventListener('close', () => {activeItem = null});
+$('itemForm').onsubmit = async event => {
+ event.preventDefault();
+ const {room, item} = activeItem;
+ const photoIds = [...$('itemPhotos').querySelectorAll('input:checked')].map(input => input.value);
+ const saved = {
+  id: item?.id || uid(), name: $('itemName').value.trim(), location: $('itemLocation').value.trim(),
+  condition: $('itemCondition').value, test: $('itemTest').value, note: $('itemNote').value.trim(),
+  highlight: $('itemHighlight').value, photoIds,
+ };
+ if (!saved.name || !saved.location) return alert('Informe o item e a localização.');
+ if (photoIds.length > 2) return alert('Selecione até duas fotos do ponto.');
+ if (needsAttention(saved) && !saved.note) {
+  alert('Descreva a ressalva ou informe o motivo de o item não ter sido observado ou testado.');
+  $('itemNote').focus();
+  return;
+ }
+ const previous = room.items;
+ room.items = [...(previous || []).filter(entry => entry.id !== saved.id), saved];
+ $('saveItem').disabled = true;
+ try {
+  if (!await persist()) {room.items = previous;return}
+  $('itemDialog').close();
+  renderItems();
+ } finally {
+  $('saveItem').disabled = false;
+ }
+};
+$('deleteItem').onclick = async () => {
+ const {room, item} = activeItem;
+ if (!item || !confirm('Excluir este item vistoriado?')) return;
+ const previous = room.items;
+ room.items = previous.filter(entry => entry.id !== item.id);
+ if (!await persist()) {room.items = previous;return}
+ $('itemDialog').close();
+ renderItems();
+};
+
+function needsAttention(item) {
+ return ['Com ressalva','Não observado'].includes(item.condition) ||
+  ['Funcionando parcialmente','Não funciona','Não testado'].includes(item.test);
+}
+
+function missingItemRooms() {
+ return state.itemWorkflow ? state.rooms.filter(room => !room.parentRoomId && !room.items?.length) : [];
+}
+
+function refreshInspectionReview() {
+ const missing = missingItemRooms().map(room => room.name);
+ const suggestions = state.rooms.filter(room => room.aiSuggestion).map(room => room.name);
+ $('inspectionReview').textContent = [
+  missing.length ? 'Sem itens registrados: ' + missing.join(', ') + '.' : '',
+  suggestions.length ? 'Sugestões da IA para revisar: ' + suggestions.join(', ') + '.' : '',
+ ].filter(Boolean).join(' ');
+}
+
+function photoStamp(room) {
+ return room.photos.map(photo => photo.id ||= uid()).join(',');
+}
+
+function renderSuggestion() {
+ const suggestion = currentRoom()?.aiSuggestion;
+ $('aiReview').classList.toggle('hidden', !suggestion);
+ $('aiSuggestion').value = suggestion?.text || '';
+}
+
+$('acceptAI').onclick = async () => {
+ const room = currentRoom();
+ const suggestion = room?.aiSuggestion;
+ if (!suggestion) return;
+ if (suggestion.photoStamp !== photoStamp(room) || suggestion.notes !== $('notes').value.trim()) {
+  return alert('As fotos ou observações mudaram. Descarte a sugestão e solicite uma análise atualizada.');
+ }
+ const text = $('aiSuggestion').value.trim();
+ if (!text) return alert('Revise o texto da sugestão antes de usar.');
+ room.declaredNotes ??= room.aiGenerated ? '' : suggestion.notes;
+ room.notes = text;
+ room.aiGenerated = true;
+ room.analysisStale = false;
+ delete room.aiSuggestion;
+ $('notes').value = text;
+ renderSuggestion();
+ $('aiStatus').textContent = 'Descrição revisada incorporada ao ambiente.';
+ await persist();
+};
+$('discardAI').onclick = async () => {
+ const room = currentRoom();
+ if (!room?.aiSuggestion) return;
+ delete room.aiSuggestion;
+ renderSuggestion();
+ $('aiStatus').textContent = 'Sugestão descartada. O descritivo anterior foi preservado.';
+ await persist();
+};
+
+function reportItems(room, printing = true, period = '') {
+ return (room?.items || []).map(item => {
+  const title = [period, room.name, item.name].filter(Boolean).join(' — ');
+  const photos = room.photos.filter(photo => item.photoIds?.includes(photo.id)).map(photo => {
+   const label = 'Foto ' + (room.photos.indexOf(photo) + 1) + ' do ambiente';
+   return `<figure style="margin:0"><img src="${escape(photo.data)}" alt="${escape(label)}"><figcaption>${escape(label)}</figcaption></figure>`;
+  }).join('');
+  return `<section class="${printing ? 'print-item' : 'room-item'}">
+   <h3>${escape(title)}</h3>
+   <p><strong>Localização:</strong> ${escape(item.location)}<br>
+   <strong>Condição visual:</strong> ${escape(item.condition)}<br>
+   <strong>Teste presencial:</strong> ${escape(item.test)}</p>
+   ${item.note ? `<p>${escape(item.note)}</p>` : ''}
+   ${photos ? `<div class="report-photo-grid">${photos}</div>` : '<p>Sem foto vinculada ao item.</p>'}
+  </section>`;
+ }).join('');
+}
+
+function itemSummary(report) {
+ const entries = report.rooms.flatMap(room => (room.items || []).map(item => ({room, item})));
+ if (!entries.length) return '';
+ const attention = entries.filter(({item}) => needsAttention(item) || item.highlight === 'Ponto de atenção');
+ const positive = entries.filter(entry => !attention.includes(entry));
+ const lines = list => list.map(({room, item}) =>
+  `<p>${escape([room.name, item.name, item.location, item.condition, item.test, item.note].filter(Boolean).join(' · '))}</p>`).join('') || '<p>Nenhum item nesta seção.</p>';
+ return `<section class="p-room"><h2>Resumo dos itens vistoriados</h2>
+  <h3>Pontos de atenção</h3>${lines(attention)}
+  <h3>Condições favoráveis</h3>${lines(positive)}</section>`;
+}
