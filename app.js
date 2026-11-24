@@ -13,7 +13,7 @@ function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('
 function get(key){return new Promise((res,rej)=>{const q=db.transaction('data').objectStore('data').get(key);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 function put(key,val){return new Promise((res,rej)=>{const tx=db.transaction('data','readwrite');tx.objectStore('data').put(val,key);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('Gravação interrompida'))})}
 async function persist(){try{syncHighlightNames();if(state.inspectionId||Object.keys(state.property||{}).length||state.rooms?.length)await acimEnsureNumber(state);await put('draft',JSON.parse(JSON.stringify(state,(k,v)=>k==='aiPending'?undefined:v)));$('resume').disabled=false;return true}catch(e){alert('Não foi possível salvar os dados neste aparelho. Exporte uma cópia antes de sair.');return false}}
-function fillProperty(){fields.forEach(f=>{if($(f))$(f).value=state.property[f]||''});updateRentalFields();const locked=state.status==='finalizada'||!!state.finalizedAt;$('code').readOnly=locked;$('code').setAttribute('aria-readonly',String(locked));$('codeHint').textContent=locked?'Código bloqueado: esta vistoria já foi finalizada.':'Pode ser alterado até a finalização.';$('inspectionNumber').textContent=acimNumber(state);$('inspectionStatus').value=state.status==='finalizada'?'finalizada':state.status==='aguardando'?'aguardando':'andamento';$('inspectionStatus').disabled=locked}
+function fillProperty(){fields.forEach(f=>{if($(f))$(f).value=state.property[f]||''});updateRentalFields();$('arrivalStatus').textContent=arrivalLabel(state.arrival);const locked=state.status==='finalizada'||!!state.finalizedAt;$('code').readOnly=locked;$('code').setAttribute('aria-readonly',String(locked));$('codeHint').textContent=locked?'Código bloqueado: esta vistoria já foi finalizada.':'Pode ser alterado até a finalização.';$('inspectionNumber').textContent=acimNumber(state);$('inspectionStatus').value=state.status==='finalizada'?'finalizada':state.status==='aguardando'?'aguardando':'andamento';$('inspectionStatus').disabled=locked}
 
 function collectProperty(){fields.forEach(f=>{if(!$(f))return;if(f==='code'&&(state.status==='finalizada'||state.finalizedAt))return;state.property[f]=$(f).value.trim()});if(state.status!=='finalizada'&&!state.finalizedAt)state.status=$('inspectionStatus').value}
 function validateProperty(){collectProperty();for(const f of propertyRequirements(state))if(!state.property[f]){alert('Preencha os campos obrigatórios, incluindo o número (ou S/N) e o tipo de vistoria nos novos registros.');$(f).focus();return false}return true}
@@ -21,7 +21,7 @@ function propertyRequirements(report){
  return ['address','owner','date','type','code','purpose',...(report.itemWorkflow?['streetNumber','inspectionKind','inspector']:[])];
 }
 function renderRooms(){refreshInspectionReview();const out=$('roomList');out.innerHTML='';state.rooms.forEach((r,i)=>{const d=document.createElement('div');d.className='room';if(r.parentRoomId)d.style.marginLeft='18px';const label=document.createElement('span');label.textContent=`${i+1}. ${r.name||'Sem nome'} · ${r.photos.length} foto(s) · ${r.items?.length||0} item(ns)`;const b=document.createElement('button');b.className='secondary';b.textContent='Editar';b.onclick=()=>openEditor(i);d.append(label,b);out.append(d)});if(!state.rooms.length)out.innerHTML='<p class="hint">Nenhum cômodo registrado ainda.</p>'}
-function openEditor(i){editing=i;$('editorTitle').textContent=i<0?'Novo cômodo':state.rooms[i].parentRoomId?state.rooms[i].name:`Editar cômodo ${i+1}`;$('roomName').value=i<0?'':state.rooms[i].name;$('notes').value=i<0?'':state.rooms[i].notes;$('highlightPositive').value=i<0?'':state.rooms[i].highlights?.positive||'';$('highlightNegative').value=i<0?'':state.rooms[i].highlights?.negative||'';$('analyze').disabled=!!state.rooms[i]?.aiPending;$('aiStatus').textContent='Analise somente fotos deste ambiente e revise a descrição.';$('photos').value='';$('deleteRoom').classList.toggle('hidden',i<0);const parent=state.rooms.find(r=>r.id===currentRoom()?.parentRoomId);$('roomName').readOnly=!!parent;$('backToParentRoom').classList.toggle('hidden',!parent);$('parentDescription').classList.toggle('hidden',!parent);$('parentDescriptionText').textContent=parent?.notes||'Sem descrição registrada no ambiente principal.';renderPhotos();renderItems();renderSuggestion();show('editor')}
+function openEditor(i){editing=i;$('editorTitle').textContent=i<0?'Novo cômodo':state.rooms[i].parentRoomId?state.rooms[i].name:`Editar cômodo ${i+1}`;$('roomName').value=i<0?'':state.rooms[i].name;$('notes').value=i<0?'':state.rooms[i].notes;$('highlightPositive').value=i<0?'':state.rooms[i].highlights?.positive||'';$('highlightNegative').value=i<0?'':state.rooms[i].highlights?.negative||'';$('analyze').disabled=!!state.rooms[i]?.aiPending;$('aiStatus').textContent='Analise somente fotos deste ambiente e revise a descrição.';$('photos').value='';$('galleryOrigin').value='imported';$('galleryReference').value='';$('galleryOrigin').onchange();$('deleteRoom').classList.toggle('hidden',i<0);const parent=state.rooms.find(r=>r.id===currentRoom()?.parentRoomId);$('roomName').readOnly=!!parent;$('backToParentRoom').classList.toggle('hidden',!parent);$('parentDescription').classList.toggle('hidden',!parent);$('parentDescriptionText').textContent=parent?.notes||'Sem descrição registrada no ambiente principal.';renderPhotos();renderItems();renderSuggestion();show('editor')}
 function currentRoom(){return editing<0?null:state.rooms[editing]}
 function collectRoomHighlights(room){if(!room.parentRoomId)return;room.highlights={positive:$('highlightPositive').value.trim(),negative:$('highlightNegative').value.trim()}}
 function syncHighlightNames(){for(const room of state.rooms||[]){if(!room.parentRoomId)continue;const parent=state.rooms.find(r=>r.id===room.parentRoomId);if(parent)room.name=parent.name+' — DESTAQUES'}}
@@ -53,15 +53,15 @@ function reportRoomHighlights(room){
   (negative?`<p><strong>Evidências negativas / pontos de atenção:</strong> ${escape(negative)}</p>`:'');
 }
 
-function renderPhotos(){const el=$('photoList');el.innerHTML='';const room=currentRoom();(room?.photos||[]).forEach((p,i)=>{const d=document.createElement('div');d.className='photo';const img=document.createElement('img');img.src=p.thumbnail||p.data;img.loading='lazy';img.alt=`Foto ${i+1}`;const b=document.createElement('button');b.textContent='×';b.setAttribute('aria-label','Excluir foto');b.onclick=async()=>{if(!confirm('Excluir esta foto?'))return;const photo=room.photos[i];
+function renderPhotos(){const el=$('photoList');el.innerHTML='';const room=currentRoom();(room?.photos||[]).forEach((p,i)=>{const d=document.createElement('div');d.className='photo';const img=document.createElement('img');img.src=p.thumbnail||p.data;img.loading='lazy';img.alt=`Foto ${i+1}`;const origin=document.createElement('small');origin.textContent=photoOriginLabel(p);const b=document.createElement('button');b.textContent='×';b.setAttribute('aria-label','Excluir foto');b.onclick=async()=>{if(!confirm('Excluir esta foto?'))return;const photo=room.photos[i];
  if(photo.id&&room.items?.some(item=>item.photoIds?.includes(photo.id))){
   alert('Retire o vínculo com o item vistoriado antes de excluir esta foto.');return;
  }
- room.photos.splice(i,1);room.analysisStale=true;await persist();renderPhotos();renderSuggestion()};d.append(img,b);el.append(d)});renderRoomHighlights()}
+ room.photos.splice(i,1);room.analysisStale=true;await persist();renderPhotos();renderSuggestion()};d.append(img,b,origin);el.append(d)});renderRoomHighlights()}
 async function saveRoom(next){if(!await captureEditor())return;renderRooms();next?openEditor(-1):show('rooms')}
 async function readPhoto(file){let source,url;const canvas=document.createElement('canvas');try{if(window.createImageBitmap){try{source=await createImageBitmap(file,{resizeWidth:1600,resizeQuality:'high'})}catch{}}if(!source){url=URL.createObjectURL(file);source=await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('Imagem incompatível. Use JPEG ou PNG.'));img.src=url})}const scale=Math.min(1,1600/source.width,1600/source.height);canvas.width=Math.max(1,Math.round(source.width*scale));canvas.height=Math.max(1,Math.round(source.height*scale));canvas.getContext('2d').drawImage(source,0,0,canvas.width,canvas.height);const data=canvas.toDataURL('image/jpeg',.78),width=canvas.width,height=canvas.height;canvas.width=240;canvas.height=Math.max(1,Math.round(240*height/width));canvas.getContext('2d').drawImage(source,0,0,canvas.width,canvas.height);return {data,thumbnail:canvas.toDataURL('image/jpeg',.65),width,height,name:file.name}}finally{source?.close?.();if(url)URL.revokeObjectURL(url);canvas.width=canvas.height=1}}
 function formattedDate(s){if(!s)return '';const [y,m,d]=s.split('-').map(Number);return new Intl.DateTimeFormat('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(y,m-1,d))}
-function buildReport(report=state){const state=report;const p=state.property;let html=acimHead('Relatório de Vistoria de Imóvel')+`<div class="meta"><div><strong>Número da vistoria:</strong> ${escape(acimNumber(state))}</div><div><strong>Situação:</strong> ${escape(acimStatus(state))}</div>`;for(const [title,key] of [['Endereço','address'],['Número','streetNumber'],['Tipo de vistoria','inspectionKind'],['Proprietário','owner'],['Data e dia','date'],['Horário','time'],['Tipo de imóvel','type'],['Código','code'],['Finalidade','purpose'],['Responsável','inspector']])html+=`<div><strong>${title}:</strong> ${escape(key==='date'?formattedDate(p[key]):p[key]||'—')}</div>`;html+=rentalReportFields(p)+'</div><p>Registro descritivo baseado nas informações e fotos inseridas durante a vistoria.</p>';state.rooms.forEach((r,i)=>{html+=`<section class="p-room"><h2>${i+1}. ${escape(r.name)}</h2><p>${escape(r.notes)||'Sem observações registradas.'}</p>${reportRoomHighlights(r)}`;r.photos.forEach((photo,j)=>{html+=`<img class="report-photo" src="${escape(photo.data)}" alt="${escape(r.name)} - foto ${j+1}">`});html+='</section>'+reportItems(r)});html+=itemSummary(state)+`<footer>${acimContacts()}<br><br>Relatório gerado em ${escape(new Date().toLocaleString('pt-BR'))}. As condições descritas devem ser conferidas pelo responsável antes do uso ou assinatura.<br><br>________________________________<br>Responsável pela vistoria</footer>`;$('print').innerHTML=html;$('summary').textContent=`${acimNumber(state)} · Imóvel ${p.code} · ${state.rooms.length} cômodo(s) · ${state.rooms.reduce((n,r)=>n+r.photos.length,0)} foto(s)`}
+function buildReport(report=state){const state=report;const p=state.property;let html=acimHead('Relatório de Vistoria de Imóvel')+`<div class="meta"><div><strong>Número da vistoria:</strong> ${escape(acimNumber(state))}</div><div><strong>Situação:</strong> ${escape(acimStatus(state))}</div>`;for(const [title,key] of [['Endereço','address'],['Número','streetNumber'],['Tipo de vistoria','inspectionKind'],['Proprietário','owner'],['Data e dia','date'],['Horário','time'],['Tipo de imóvel','type'],['Código','code'],['Finalidade','purpose'],['Responsável','inspector']])html+=`<div><strong>${title}:</strong> ${escape(key==='date'?formattedDate(p[key]):p[key]||'—')}</div>`;html+=rentalReportFields(p)+'</div>'+arrivalReport(state.arrival)+'<p>Registro descritivo baseado nas informações e fotos inseridas durante a vistoria.</p>';state.rooms.forEach((r,i)=>{html+=`<section class="p-room"><h2>${i+1}. ${escape(r.name)}</h2><p>${escape(r.notes)||'Sem observações registradas.'}</p>${reportRoomHighlights(r)}`;r.photos.forEach((photo,j)=>{html+=`<img class="report-photo" data-origin="${escape(photoOriginLabel(photo))}" src="${escape(photo.data)}" alt="${escape(r.name)} - foto ${j+1}">`});html+='</section>'+reportItems(r)});html+=itemSummary(state)+`<footer>${acimContacts()}<br><br>${state.finalizedAt ? `Finalizada em ${escape(inspectionTimestamp(state.finalizedAt))}.<br>` : ''}Relatório gerado em ${escape(inspectionTimestamp(new Date()))}. As condições descritas devem ser conferidas pelo responsável antes do uso ou assinatura.<br><br>________________________________<br>Responsável pela vistoria</footer>`;$('print').innerHTML=html;$('summary').textContent=`${acimNumber(state)} · Imóvel ${p.code} · ${state.rooms.length} cômodo(s) · ${state.rooms.reduce((n,r)=>n+r.photos.length,0)} foto(s)`}
 $('new').onclick=async()=>{if(state.rooms.length&&!confirm('Iniciar uma nova vistoria? O rascunho atual será substituído. Exporte uma cópia se precisar guardá-lo.'))return;if(!await acimArchiveCurrent(state.status||'andamento'))return;state={property:{date:new Date().toLocaleDateString('en-CA')},rooms:[],status:'aguardando',inspectionId:uid(),itemWorkflow:true,createdAt:new Date().toISOString()};if(!await persist())return;fillProperty();show('property')};
 $('resume').onclick=()=>acimShowLibrary('open','Vistorias em aberto');$('backHome').onclick=returnToHome;
 $('toRooms').onclick=async()=>{if(!validateProperty())return;if(state.status!=='finalizada')state.status='andamento';await persist();renderRooms();show('rooms')};$('editProperty').onclick=()=>{propertyFromRooms=true;fillProperty();show('property')};
@@ -88,7 +88,7 @@ if(currentRoom()===room){
  renderSuggestion();
  $('aiStatus').textContent='Sugestão disponível. Revise e escolha se deseja usar ou descartar.';
 }await persist()}catch(e){if(currentRoom()===room)$('aiStatus').textContent=e.name==='AbortError'?'A análise demorou demais. Tente novamente.':'Não foi possível analisar: '+e.message}finally{clearTimeout(timer);delete room.aiPending;if(currentRoom()===room)$('analyze').disabled=false}};
-$('photos').onchange=async e=>{const files=[...e.target.files];if(!files.length)return;const room=await captureEditor();if(!room){e.target.value='';return}$('photos').disabled=true;try{for(const file of files){room.photos.push({id:uid(),...await readPhoto(file)});room.analysisStale=true;if(!await persist())break}if(currentRoom()===room)renderPhotos()}catch(err){alert('Não foi possível abrir uma das fotos: '+err.message)}finally{$('photos').disabled=false;e.target.value=''}};
+$('photos').onchange=async e=>{const files=[...e.target.files];if(!files.length)return;const origin=$('galleryOrigin').value,sourceReport=$('galleryReference').value.trim();if(origin==='reused'&&!sourceReport){e.target.value='';return alert('Informe o laudo de origem antes de selecionar as fotos.')}const room=await captureEditor();if(!room){e.target.value='';return}$('photos').disabled=true;try{for(const file of files){room.photos.push({id:uid(),...await readPhoto(file),origin,...(origin==='reused'?{sourceReport}:{})});room.analysisStale=true;if(!await persist())break}if(currentRoom()===room)renderPhotos()}catch(err){alert('Não foi possível abrir uma das fotos: '+err.message)}finally{$('photos').disabled=false;e.target.value=''}};
 $('finish').onclick=async()=>{if(!state.rooms.length)return alert('Adicione pelo menos um cômodo.');
 if(state.itemWorkflow&&propertyRequirements(state).some(field=>!state.property[field])){
  fillProperty();show('property');validateProperty();return;
@@ -232,7 +232,7 @@ function renderComparison(a,b){
   const names=[...new Set([...ra.map(cmpKey),...rb.map(cmpKey)])].filter(Boolean);
   const find=(arr,n)=>arr.find(r=>cmpKey(r)===n);
   const opts=['Sem alteração aparente','Melhorado','Reparado','Desgaste natural','Dano / avaria','Necessita manutenção','Substituído','Removido','Instalado','Não foi possível comparar','Revisar pelo vistoriador'];
-  const photos=r=>(r?.photos||[]).map((p,i)=>`<img src="${escape(p.data)}" alt="Foto ${i+1}" style="display:block;width:100%;height:auto;margin:8px 0;border-radius:8px">`).join('')||'<p class="hint">Sem fotos.</p>';
+  const photos=r=>(r?.photos||[]).map((p,i)=>`<img src="${escape(p.data)}" alt="Foto ${i+1}" style="display:block;width:100%;height:auto;margin:8px 0;border-radius:8px"><small>${escape(photoOriginLabel(p))}</small>`).join('')||'<p class="hint">Sem fotos.</p>';
   list.innerHTML=`<div class="status"><strong>Comparativo:</strong> ${escape(b.property?.code||a.property?.code||'')} — ${escape(b.property?.address||a.property?.address||'')}</div>
   <p class="hint">Revise cada classificação e observação antes de gerar o PDF.</p>`+
   names.map((n,i)=>{const x=find(ra,n),y=find(rb,n);const def=!x||!y?'Não foi possível comparar':'Revisar pelo vistoriador';return `
@@ -260,7 +260,7 @@ function summaryText(names,ra,rb){
 function comparisonPdf(a,b,names,ra,rb){
   const find=(arr,n)=>arr.find(r=>cmpKey(r)===n);
   const cards=[...document.querySelectorAll('[data-cmp]')];
-  const imgs=r=>(r?.photos||[]).map((p,i)=>`<img class="report-photo" src="${escape(p.data)}" alt="Foto ${i+1}">`).join('');
+  const imgs=r=>(r?.photos||[]).map((p,i)=>`<img class="report-photo" data-origin="${escape(photoOriginLabel(p))}" src="${escape(p.data)}" alt="Foto ${i+1}">`).join('');
   let h=acimHead('Relatório Comparativo de Vistorias')+`<div class="meta">
   <div><strong>Código:</strong> ${escape(b.property?.code||a.property?.code||'—')}</div>
   <div><strong>Endereço:</strong> ${escape(b.property?.address||a.property?.address||'—')}</div>
@@ -315,6 +315,7 @@ function comparisonPdf(a,b,names,ra,rb){
   };
   shot.onclick=async()=>{
     if(busy||!video.videoWidth||!room)return;busy=true;shot.disabled=true;
+    const capturedAt=new Date().toISOString();
     const target=room, canvas=document.createElement('canvas');
     try{
       const scale=Math.min(1,1600/video.videoWidth,1600/video.videoHeight);
@@ -326,7 +327,7 @@ function comparisonPdf(a,b,names,ra,rb){
       const thumbnail=canvas.toDataURL('image/jpeg',.65);
       // Libera a câmera antes de salvar e renderizar as fotos.
       stop();
-      target.photos.push({id:uid(),data,thumbnail,width,height,name:'foto-'+Date.now()+'.jpg'});target.analysisStale=true;
+      target.photos.push({id:uid(),data,thumbnail,width,height,name:'foto-'+Date.now()+'.jpg',origin:'captured',capturedAt});target.analysisStale=true;
       await persist();if(currentRoom()===target)renderPhotos();
     }catch(error){stop();alert('Não foi possível salvar a foto. Use Escolher arquivos e tente novamente.')}finally{canvas.width=canvas.height=1;busy=false}
   };
@@ -358,7 +359,7 @@ async function printReport(target){
    const reserve=photoIndex<photos.length?185:0;
    if(remaining){let words=remaining.match(/\S+\s*/g)||[],low=0,high=words.length;while(low<high){const mid=Math.ceil((low+high)/2);paragraph.textContent=words.slice(0,mid).join('');grid.style.height=reserve+'px';if(fits())low=mid;else high=mid-1}if(low===0)throw new Error('Não foi possível ajustar a descrição à página.');paragraph.textContent=words.slice(0,low).join('');remaining=words.slice(low).join('')}else paragraph.textContent='Continuação do registro fotográfico deste ambiente.';
    grid.style.height='';
-   while(photoIndex<photos.length){const img=photos[photoIndex];const figure=document.createElement('figure');figure.append(img);const caption=document.createElement('figcaption');caption.textContent=`${title} • Foto ${photoIndex+1}`;figure.append(caption);grid.append(figure);if(!fits()){figure.remove();break}photoIndex++}
+   while(photoIndex<photos.length){const img=photos[photoIndex];const figure=document.createElement('figure');figure.append(img);const caption=document.createElement('figcaption');caption.textContent=`${title} • Foto ${photoIndex+1} · ${img.dataset.origin}`;figure.append(caption);grid.append(figure);if(!fits()){figure.remove();break}photoIndex++}
    part++;if(remaining||photoIndex<photos.length)newPage();
   }while(remaining||photoIndex<photos.length);
  }
@@ -441,7 +442,7 @@ function renderItems() {
   const row = document.createElement('div');
   row.className = 'room';
   const text = document.createElement('span');
-  text.textContent = [item.name, item.location, item.condition, item.test].join(' · ');
+  text.textContent = [item.name, item.location, item.condition, item.test, itemQuestionLabel(item)].filter(Boolean).join(' · ');
   const edit = document.createElement('button');
   edit.type = 'button';
   edit.className = 'secondary';
@@ -456,6 +457,11 @@ function openItem(room, item) {
  activeItem = {room, item};
  const fields = {itemName:'name',itemLocation:'location',itemCondition:'condition',itemTest:'test',itemNote:'note',itemHighlight:'highlight'};
  for (const [id, key] of Object.entries(fields)) $(id).value = item?.[key] || '';
+ for (const [id, key] of Object.entries(questionFields)) {
+  const field = $(id);
+  field.value = item?.question?.[key] ?? (field.tagName === 'SELECT' ? field.options[0].value : '');
+ }
+ updateQuestionFields();
  $('deleteItem').hidden = !item;
  const photos = $('itemPhotos');
  photos.replaceChildren();
@@ -498,7 +504,7 @@ $('itemForm').onsubmit = event => {
 
 $('itemHome').onclick = async () => {
  if ($('saveItem').disabled) return;
- const empty = !activeItem.item && !$('itemName').value.trim() && !$('itemLocation').value.trim() &&
+ const empty = !activeItem.item && !$('itemCategory').value && !$('itemQuantity').value && !$('itemName').value.trim() && !$('itemLocation').value.trim() &&
   !$('itemCondition').value && !$('itemTest').value && !$('itemNote').value.trim() &&
   !$('itemHighlight').value && !$('itemPhotos').querySelector('input:checked');
  if (empty) $('itemDialog').close();
@@ -512,11 +518,21 @@ async function saveInspectionItem() {
  const saved = {
   id: item?.id || uid(), name: $('itemName').value.trim(), location: $('itemLocation').value.trim(),
   condition: $('itemCondition').value, test: $('itemTest').value, note: $('itemNote').value.trim(),
-  highlight: $('itemHighlight').value, photoIds,
+  highlight: $('itemHighlight').value, photoIds, question: readItemQuestion(),
  };
  if (!saved.name || !saved.location) return alert('Informe o item e a localização.');
+ const q = saved.question;
+ if (q.category === 'lighting') {
+  if (q.points && Number(q.empty) > Number(q.points)) return alert('Os pontos sem lâmpada não podem exceder o total de pontos.');
+  if (Number(q.working) + Number(q.failed) + Number(q.untested) !== Number(q.quantity)) {
+   return alert('A soma das lâmpadas funcionando, sem funcionar e não testadas deve bater com a quantidade instalada.');
+  }
+  saved.test = !Number(q.quantity) ? 'Não se aplica' : Number(q.untested) === Number(q.quantity) ? 'Não testado'
+   : Number(q.untested) ? 'Teste incompleto' : Number(q.working) === Number(q.quantity) ? 'Funcionando'
+   : Number(q.working) ? 'Funcionando parcialmente' : 'Não funciona';
+ }
  if (photoIds.length > 2) return alert('Selecione até duas fotos do ponto.');
- if (needsAttention(saved) && !saved.note) {
+ if (needsAttention(saved) && !q.category && !saved.note) {
   alert('Descreva a ressalva ou informe o motivo de o item não ter sido observado ou testado.');
   $('itemNote').focus();
   return;
@@ -544,8 +560,10 @@ $('deleteItem').onclick = async () => {
 };
 
 function needsAttention(item) {
- return ['Com ressalva','Não observado'].includes(item.condition) ||
-  ['Funcionando parcialmente','Não funciona','Não testado'].includes(item.test);
+ return ['Com ressalva','Não observado','Com avaria','Ausente'].includes(item.condition) ||
+  Number(item.question?.empty) > 0 || /^Sim/.test(item.question?.leak || '') ||
+  ['Fraco','Sem fluxo','Não testado'].includes(item.question?.flow) ||
+  ['Funcionando parcialmente','Não funciona','Não testado','Teste incompleto'].includes(item.test);
 }
 
 function missingItemRooms() {
@@ -611,6 +629,7 @@ function reportItems(room, printing = true, period = '') {
    <p><strong>Localização:</strong> ${escape(item.location)}<br>
    <strong>Condição visual:</strong> ${escape(item.condition)}<br>
    <strong>Teste presencial:</strong> ${escape(item.test)}</p>
+   ${itemQuestionLabel(item) ? `<p>${escape(itemQuestionLabel(item))}</p>` : ''}
    ${item.note ? `<p>${escape(item.note)}</p>` : ''}
    ${photos ? `<div class="report-photo-grid">${photos}</div>` : '<p>Sem foto vinculada ao item.</p>'}
   </section>`;
@@ -623,7 +642,7 @@ function itemSummary(report) {
  const attention = entries.filter(({item}) => needsAttention(item) || item.highlight === 'Ponto de atenção');
  const positive = entries.filter(entry => !attention.includes(entry));
  const lines = list => list.map(({room, item}) =>
-  `<p>${escape([room.name, item.name, item.location, item.condition, item.test, item.note].filter(Boolean).join(' · '))}</p>`).join('') || '<p>Nenhum item nesta seção.</p>';
+  `<p>${escape([room.name, item.name, item.location, item.condition, item.test, itemQuestionLabel(item), item.note].filter(Boolean).join(' · '))}</p>`).join('') || '<p>Nenhum item nesta seção.</p>';
  return `<section class="p-room"><h2>Resumo dos itens vistoriados</h2>
   <h3>Pontos de atenção</h3>${lines(attention)}
   <h3>Condições favoráveis</h3>${lines(positive)}</section>`;
@@ -696,4 +715,134 @@ function rentalReportFields(property) {
  ];
  return fields.filter(([title, value]) => title && value)
   .map(([title, value]) => `<div><strong>${escape(title)}:</strong> ${escape(value)}</div>`).join('');
+}
+
+const inspectionTimestamp = value => new Date(value).toLocaleString('pt-BR', {
+ timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'medium',
+});
+
+function arrivalLabel(arrival) {
+ if (!arrival) return 'Localização não registrada.';
+ const timing = inspectionTimestamp(arrival.recordedAt) + ' (horário de Brasília)';
+ if (arrival.error) return timing + ' · ' + arrival.error;
+ return timing + ' · precisão estimada de ' + Math.ceil(arrival.accuracy) + ' m' +
+  (arrival.accuracy > 50 ? ' (baixa precisão)' : '') +
+  (arrival.inspector ? ' · ' + arrival.inspector : '');
+}
+
+function arrivalReport(arrival) {
+ const link = arrival && !arrival.error
+  ? ` · <a href="https://www.google.com/maps?q=${Number(arrival.latitude)},${Number(arrival.longitude)}">Abrir ponto no mapa</a>`
+  : '';
+ return `<p><strong>Localização na chegada:</strong> ${escape(arrivalLabel(arrival))}${link}</p>`;
+}
+
+$('captureArrival').onclick = async () => {
+ const button = $('captureArrival');
+ const report = state;
+ collectProperty();
+ button.disabled = true;
+ $('arrivalStatus').textContent = 'Obtendo localização do aparelho…';
+ let arrival;
+ try {
+  if (!navigator.geolocation) throw Error('Localização indisponível neste aparelho.');
+  const position = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(
+   resolve, reject, {enableHighAccuracy: true, timeout: 12000, maximumAge: 0},
+  ));
+  const {latitude, longitude, accuracy} = position.coords;
+  arrival = {latitude, longitude, accuracy, recordedAt: new Date(position.timestamp).toISOString(),
+   inspector: report.property.inspector};
+ } catch (error) {
+  arrival = {recordedAt: new Date().toISOString(), error: error.code === 1
+   ? 'Permissão de localização não concedida.' : 'Localização indisponível. Você pode tentar novamente.'};
+ } finally {
+  button.disabled = false;
+ }
+ if (state !== report) return;
+ const previous = report.arrival;
+ if (!arrival.error || !previous || previous.error) {
+  report.arrival = arrival;
+  if (!await persist()) report.arrival = previous;
+ }
+ $('arrivalStatus').textContent = arrival.error && previous && !previous.error
+  ? arrival.error + ' Registro anterior mantido. ' + arrivalLabel(previous) : arrivalLabel(report.arrival);
+};
+
+$('galleryOrigin').onchange = () => {
+ const reused = $('galleryOrigin').value === 'reused';
+ $('galleryReference').hidden = !reused;
+ $('galleryReferenceLabel').hidden = !reused;
+};
+
+function photoOriginLabel(photo) {
+ if (photo.origin === 'captured') return 'Capturada no aplicativo · ' + inspectionTimestamp(photo.capturedAt);
+ if (photo.origin === 'reused') return 'Reaproveitada · ' + photo.sourceReport + ' · captura não verificada';
+ if (photo.origin === 'imported') return 'Importada · captura não verificada';
+ return 'Origem não registrada';
+}
+
+const questionFields = {
+ itemCategory: 'category', itemQuantity: 'quantity', itemLightPoints: 'points', itemEmpty: 'empty', itemWorking: 'working',
+ itemFailed: 'failed', itemUntested: 'untested', itemVoltage: 'voltage',
+ itemOtherVoltage: 'otherVoltage', itemVoltageSource: 'voltageSource', itemFlow: 'flow', itemLeak: 'leak',
+};
+
+function updateQuestionFields() {
+ const category = $('itemCategory').value;
+ for (const [kind, id] of Object.entries({lighting: 'lightingFields', outlet: 'outletFields', tap: 'tapFields'})) {
+  const visible = kind === category;
+  $(id).hidden = !visible;
+  for (const field of $(id).querySelectorAll('input,select')) field.disabled = !visible;
+ }
+ $('itemTest').disabled = category === 'lighting';
+ $('itemTest').closest('form').querySelector('label[for="itemTest"]').hidden = category === 'lighting';
+ $('itemTest').hidden = category === 'lighting';
+ $('itemQuantityLabel').textContent = category === 'lighting' ? 'Lâmpadas instaladas' : 'Quantidade';
+ const needsVoltageSource = category === 'outlet' && $('itemVoltage').value !== 'Não verificada';
+ const otherVoltage = needsVoltageSource && $('itemVoltage').value === 'Outra';
+ $('itemVoltageSource').required = needsVoltageSource;
+ $('itemOtherVoltage').required = otherVoltage;
+ $('itemOtherVoltage').hidden = !otherVoltage;
+ $('otherVoltageLabel').hidden = !otherVoltage;
+ for (const id of ['itemQuantity','itemEmpty','itemWorking','itemFailed','itemUntested']) {
+  $(id).required = id === 'itemQuantity' ? !!category : category === 'lighting';
+ }
+}
+
+$('itemCategory').onchange = () => {
+ const category = $('itemCategory');
+ if (!$('itemName').value.trim() && category.value) $('itemName').value = category.selectedOptions[0].text;
+ updateQuestionFields();
+};
+$('itemVoltage').onchange = updateQuestionFields;
+
+function readItemQuestion() {
+ const value = id => $(id).value.trim();
+ const category = value('itemCategory');
+ const question = {category, quantity: value('itemQuantity')};
+ if (category === 'lighting') Object.assign(question, {
+  points: value('itemLightPoints'), empty: value('itemEmpty'), working: value('itemWorking'), failed: value('itemFailed'),
+  untested: value('itemUntested'),
+ });
+ if (category === 'outlet') Object.assign(question, {
+  voltage: value('itemVoltage'), otherVoltage: value('itemOtherVoltage'),
+  voltageSource: value('itemVoltage') === 'Não verificada' ? '' : value('itemVoltageSource'),
+ });
+ if (category === 'tap') Object.assign(question, {flow: value('itemFlow'), leak: value('itemLeak')});
+ return question;
+}
+
+function itemQuestionLabel(item) {
+ const q = item.question;
+ if (!q) return '';
+ if (q.category === 'lighting') {
+  return `${q.points ? q.points + ' pontos de luz · ' : ''}${q.quantity} instaladas · ${q.working} funcionando · ${q.failed} sem funcionar · ${q.untested} não testadas · ${q.empty} pontos sem lâmpada`;
+ }
+ const quantity = q.quantity === '' ? '' : `Quantidade: ${q.quantity}`;
+ if (q.category === 'tap') return `${quantity} · Fluxo: ${q.flow} · Vazamento: ${q.leak}`;
+ if (q.category === 'outlet') {
+  const voltage = q.voltage === 'Outra' ? q.otherVoltage : q.voltage;
+  return [quantity, 'Tensão: ' + voltage, q.voltageSource].filter(Boolean).join(' · ');
+ }
+ return quantity;
 }

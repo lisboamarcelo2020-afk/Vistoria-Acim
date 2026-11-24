@@ -51,7 +51,13 @@ header{position:sticky;top:0;z-index:2;flex-wrap:wrap}
 <div><label for="guaranteeType">Tipo de garantia</label><select id="guaranteeType"><option value="">Selecione</option><option>Seguro-fiança</option><option>Fiador</option><option>Caução</option></select></div>
 <div id="guaranteeResponsibleField" hidden><label for="guaranteeResponsible" id="guaranteeResponsibleLabel">Nome da pessoa ou empresa responsável</label><input id="guaranteeResponsible" maxlength="160"></div>
 </div>
-</fieldset><div class="actions"><button id="toRooms">Continuar para cômodos</button><button class="secondary" id="backProperty">Voltar</button><button class="secondary" id="backHome">Sair</button></div></section><section class="card hidden" id="rooms"><h1>Cômodos e áreas</h1><p class="hint">Você pode editar qualquer cômodo e acrescentar novas fotos antes ou depois de finalizar.</p><div id="roomList"></div><p id="inspectionReview" class="hint" role="status"></p><div class="actions"><button id="addRoom">Adicionar cômodo</button><button id="finish" class="secondary">Finalizar e gerar relatório</button><button id="saveExitRooms" class="secondary">Sair</button><button id="editProperty" class="secondary">Voltar</button></div></section><section class="card hidden" id="editor"><h1 id="editorTitle">Cômodo</h1><label>Nome do cômodo ou área *</label><input id="roomName" placeholder="Ex.: Sala, cozinha, banheiro, fachada"><details id="parentDescription" class="hidden"><summary>Descrição do ambiente principal</summary><p id="parentDescriptionText" style="white-space:pre-wrap"></p></details><label>Detalhes e estado de conservação</label><textarea id="notes" placeholder="Descreva pintura, piso, teto, portas, janelas, tomadas, iluminação, instalações, equipamentos e eventuais avarias."></textarea><div class="actions"><button class="secondary" id="speak" type="button">🎙️ Ditar observações</button></div><p class="hint" id="speechHint">A fala depende do reconhecimento de voz disponível no navegador e pode exigir internet. Revise o texto transcrito.</p><label>Fotos do cômodo</label><input id="photos" type="file" accept="image/*"  multiple><p class="hint">Você pode tirar fotos ou selecionar imagens da galeria. Aguarde as miniaturas aparecerem antes de sair.</p><div id="photoList" class="photo-grid"></div>
+</fieldset><fieldset style="margin-top:16px">
+<legend>Localização na chegada</legend>
+<p id="arrivalStatus" class="hint" role="status"></p>
+<button id="captureArrival" class="secondary" type="button">Confirmar presença no imóvel</button>
+</fieldset><div class="actions"><button id="toRooms">Continuar para cômodos</button><button class="secondary" id="backProperty">Voltar</button><button class="secondary" id="backHome">Sair</button></div></section><section class="card hidden" id="rooms"><h1>Cômodos e áreas</h1><p class="hint">Você pode editar qualquer cômodo e acrescentar novas fotos antes ou depois de finalizar.</p><div id="roomList"></div><p id="inspectionReview" class="hint" role="status"></p><div class="actions"><button id="addRoom">Adicionar cômodo</button><button id="finish" class="secondary">Finalizar e gerar relatório</button><button id="saveExitRooms" class="secondary">Sair</button><button id="editProperty" class="secondary">Voltar</button></div></section><section class="card hidden" id="editor"><h1 id="editorTitle">Cômodo</h1><label>Nome do cômodo ou área *</label><input id="roomName" placeholder="Ex.: Sala, cozinha, banheiro, fachada"><details id="parentDescription" class="hidden"><summary>Descrição do ambiente principal</summary><p id="parentDescriptionText" style="white-space:pre-wrap"></p></details><label>Detalhes e estado de conservação</label><textarea id="notes" placeholder="Descreva pintura, piso, teto, portas, janelas, tomadas, iluminação, instalações, equipamentos e eventuais avarias."></textarea><div class="actions"><button class="secondary" id="speak" type="button">🎙️ Ditar observações</button></div><p class="hint" id="speechHint">A fala depende do reconhecimento de voz disponível no navegador e pode exigir internet. Revise o texto transcrito.</p><label>Fotos do cômodo</label><input id="photos" type="file" accept="image/*"  multiple><p class="hint">Você pode tirar fotos ou selecionar imagens da galeria. Aguarde as miniaturas aparecerem antes de sair.</p><label for="galleryOrigin">Origem das fotos selecionadas</label><select id="galleryOrigin"><option value="imported">Importadas da galeria</option><option value="reused">Reaproveitadas de outro laudo</option></select>
+<label id="galleryReferenceLabel" for="galleryReference" hidden>Referência do laudo de origem</label><input id="galleryReference" hidden maxlength="120" placeholder="Número, data ou identificação do laudo">
+<div id="photoList" class="photo-grid"></div>
 <section id="inspectionItems" style="margin-top:20px" aria-labelledby="itemHeading">
 <h2 id="itemHeading">Itens vistoriados</h2>
 <p class="hint">Registre a condição visual e o teste presencial. Tire a foto do ponto em “Fotos do cômodo” e selecione-a no item.</p>
@@ -63,9 +69,30 @@ header{position:sticky;top:0;z-index:2;flex-wrap:wrap}
 <h2>Item vistoriado</h2>
 <label for="itemName">Item *</label><input id="itemName" list="itemNames" required maxlength="80">
 <datalist id="itemNames"><option>Piso</option><option>Rodapé</option><option>Parede</option><option>Teto</option><option>Iluminação</option><option>Tomadas</option><option>Porta</option><option>Janela</option><option>Fechadura</option><option>Torneira</option><option>Sifão</option><option>Descarga</option><option>Vaso sanitário</option></datalist>
+<label for="itemCategory">Questionário</label>
+<select id="itemCategory"><option value="">Item geral</option><option value="lighting">Lâmpadas</option><option value="outlet">Tomadas</option><option value="tap">Torneiras</option></select>
+<div id="itemQuantityFields">
+<label for="itemQuantity" id="itemQuantityLabel">Quantidade</label><input id="itemQuantity" type="number" min="0" max="999" step="1">
+</div>
+<div id="lightingFields" hidden>
+<label for="itemLightPoints">Pontos de luz ou suportes (opcional)</label><input id="itemLightPoints" type="number" min="0" max="999" step="1">
+<label for="itemEmpty">Pontos sem lâmpada</label><input id="itemEmpty" type="number" min="0" max="999" step="1">
+<label for="itemWorking">Lâmpadas funcionando</label><input id="itemWorking" type="number" min="0" max="999" step="1">
+<label for="itemFailed">Lâmpadas sem funcionar</label><input id="itemFailed" type="number" min="0" max="999" step="1">
+<label for="itemUntested">Lâmpadas não testadas</label><input id="itemUntested" type="number" min="0" max="999" step="1">
+</div>
+<div id="outletFields" hidden>
+<label for="itemVoltage">Tensão</label><select id="itemVoltage"><option>Não verificada</option><option>127 V</option><option>220 V</option><option>Outra</option></select>
+<label for="itemOtherVoltage" id="otherVoltageLabel" hidden>Informe a tensão</label><input id="itemOtherVoltage" hidden maxlength="30">
+<label for="itemVoltageSource">Como foi verificada</label><select id="itemVoltageSource"><option value="">Selecione</option><option>Medida</option><option>Informada na etiqueta</option></select>
+</div>
+<div id="tapFields" hidden>
+<label for="itemFlow">Fluxo</label><select id="itemFlow"><option>Não testado</option><option>Normal</option><option>Fraco</option><option>Sem fluxo</option></select>
+<label for="itemLeak">Vazamento</label><select id="itemLeak"><option>Não testado</option><option>Não observado durante o teste</option><option>Sim — bica</option><option>Sim — base</option><option>Sim — conexão</option><option>Sim — outro ponto</option></select>
+</div>
 <label for="itemLocation">Localização exata *</label><input id="itemLocation" required maxlength="120" placeholder="Ex.: junto à soleira, lado direito">
-<label for="itemCondition">Condição visual *</label><select id="itemCondition" required><option value="">Selecione</option><option>Bom estado</option><option>Com ressalva</option><option>Não observado</option></select>
-<label for="itemTest">Resultado do teste *</label><select id="itemTest" required><option value="">Selecione</option><option>Funcionando</option><option>Funcionando parcialmente</option><option>Não funciona</option><option>Não testado</option><option>Não se aplica</option></select>
+<label for="itemCondition">Condição visual *</label><select id="itemCondition" required><option value="">Selecione</option><option>Novo</option><option>Bom estado</option><option>Com marcas de uso</option><option>Com avaria</option><option>Com ressalva</option><option>Ausente</option><option>Não observado</option><option>Não se aplica</option></select>
+<label for="itemTest">Resultado do teste *</label><select id="itemTest" required><option value="">Selecione</option><option>Funcionando</option><option>Funcionando parcialmente</option><option>Não funciona</option><option>Não testado</option><option>Teste incompleto</option><option>Não se aplica</option></select>
 <label for="itemNote">O que foi observado ou testado</label><textarea id="itemNote" maxlength="600" placeholder="Ex.: acionei o interruptor. Das 6 lâmpadas instaladas, 4 acenderam. Informe o motivo quando o teste ficar pendente."></textarea>
 <label for="itemHighlight">Destaque no resumo</label><select id="itemHighlight"><option value="">Automático</option><option>Destaque positivo</option><option>Ponto de atenção</option></select>
 <fieldset style="margin-top:12px"><legend>Fotos do item (até duas)</legend><div id="itemPhotos"></div></fieldset>
@@ -100,4 +127,4 @@ document.getElementById('home').insertAdjacentHTML('beforeend', `
 <h1>Histórico compartilhado</h1><p id="sharedStatus" role="status"></p>
 <form id="sharedLogin" hidden><label for="sharedUser">Usuário da equipe</label><input id="sharedUser" autocomplete="username" required><label for="sharedPassword">Senha</label><input id="sharedPassword" type="password" autocomplete="current-password" required><div class="actions"><button>Entrar</button></div></form>
 <div id="sharedList"></div><div class="actions"><button id="sharedLogout" class="secondary" hidden>Sair da conta</button><button id="sharedBack" class="secondary">Voltar</button></div>
-</section></main><article id="print" class="hidden"></article><article id="comparePrint" class="hidden"></article><script src="app.js?v=18"></script></body></html>
+</section></main><article id="print" class="hidden"></article><article id="comparePrint" class="hidden"></article><script src="app.js?v=19"></script></body></html>
