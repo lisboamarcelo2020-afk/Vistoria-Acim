@@ -1,6 +1,6 @@
 'use strict';
 const $=id=>document.getElementById(id), fields=['address','owner','date','time','type','code','purpose','inspector','streetNumber','inspectionKind'];
-let state={property:{},rooms:[]},editing=-1,db,sharedPreview=null;
+let state={property:{},rooms:[]},editing=-1,db,sharedPreview=null,propertyFromRooms=false;
 const uid=()=>crypto.randomUUID?.()||String(Date.now()+Math.random());
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -8,7 +8,7 @@ const ACIM_LOGO='logo.jpg';
 function acimHead(t){return `<div class="acim-head"><img src="${ACIM_LOGO}" alt="ACIM Imóveis"><div><h1>${escape(t)}</h1><p>ACIM Imóveis • CRECI 22335</p></div></div>`}
 function acimContacts(){return `Rua Egas Bueno, 540 – Centro – Jaguariúna/SP<br>(19) 99451-1865 • (19) 3937-4700 • acim@acimimoveis.com.br • www.acimimoveis.com.br`}
 
-function show(id){$('returnHome').hidden=id==='home';if(id!=='result'){$('backSharedResult').hidden=true;sharedPreview=null;$('sharedAudit').replaceChildren();$('editRooms').hidden=false;$('export').hidden=false;}if(id!=='editor')$('photoList').replaceChildren();if(id!=='result')$('print').replaceChildren();if(id!=='compare'){$('comparePrint').replaceChildren();$('compareList').replaceChildren()}['home','property','rooms','editor','result','library','compare','sharedHistory'].forEach(x=>$(x).classList.toggle('hidden',x!==id));scrollTo(0,0)}
+function show(id){if(id!=='property')propertyFromRooms=false;$('returnHome').hidden=['home','property','rooms','editor'].includes(id);if(id!=='result'){$('backSharedResult').hidden=true;sharedPreview=null;$('sharedAudit').replaceChildren();$('editRooms').hidden=false;$('export').hidden=false;}if(id!=='editor')$('photoList').replaceChildren();if(id!=='result')$('print').replaceChildren();if(id!=='compare'){$('comparePrint').replaceChildren();$('compareList').replaceChildren()}['home','property','rooms','editor','result','library','compare','sharedHistory'].forEach(x=>$(x).classList.toggle('hidden',x!==id));scrollTo(0,0)}
 function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('vistoria-acim',1);r.onupgradeneeded=()=>r.result.createObjectStore('data');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function get(key){return new Promise((res,rej)=>{const q=db.transaction('data').objectStore('data').get(key);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 function put(key,val){return new Promise((res,rej)=>{const tx=db.transaction('data','readwrite');tx.objectStore('data').put(val,key);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('Gravação interrompida'))})}
@@ -64,8 +64,20 @@ function formattedDate(s){if(!s)return '';const [y,m,d]=s.split('-').map(Number)
 function buildReport(report=state){const state=report;const p=state.property;let html=acimHead('Relatório de Vistoria de Imóvel')+`<div class="meta"><div><strong>Número da vistoria:</strong> ${escape(acimNumber(state))}</div><div><strong>Situação:</strong> ${escape(acimStatus(state))}</div>`;for(const [title,key] of [['Endereço','address'],['Número','streetNumber'],['Tipo de vistoria','inspectionKind'],['Proprietário','owner'],['Data e dia','date'],['Horário','time'],['Tipo de imóvel','type'],['Código','code'],['Finalidade','purpose'],['Responsável','inspector']])html+=`<div><strong>${title}:</strong> ${escape(key==='date'?formattedDate(p[key]):p[key]||'—')}</div>`;html+='</div><p>Registro descritivo baseado nas informações e fotos inseridas durante a vistoria.</p>';state.rooms.forEach((r,i)=>{html+=`<section class="p-room"><h2>${i+1}. ${escape(r.name)}</h2><p>${escape(r.notes)||'Sem observações registradas.'}</p>${reportRoomHighlights(r)}`;r.photos.forEach((photo,j)=>{html+=`<img class="report-photo" src="${escape(photo.data)}" alt="${escape(r.name)} - foto ${j+1}">`});html+='</section>'+reportItems(r)});html+=itemSummary(state)+`<footer>${acimContacts()}<br><br>Relatório gerado em ${escape(new Date().toLocaleString('pt-BR'))}. As condições descritas devem ser conferidas pelo responsável antes do uso ou assinatura.<br><br>________________________________<br>Responsável pela vistoria</footer>`;$('print').innerHTML=html;$('summary').textContent=`${acimNumber(state)} · Imóvel ${p.code} · ${state.rooms.length} cômodo(s) · ${state.rooms.reduce((n,r)=>n+r.photos.length,0)} foto(s)`}
 $('new').onclick=async()=>{if(state.rooms.length&&!confirm('Iniciar uma nova vistoria? O rascunho atual será substituído. Exporte uma cópia se precisar guardá-lo.'))return;if(!await acimArchiveCurrent(state.status||'andamento'))return;state={property:{date:new Date().toLocaleDateString('en-CA')},rooms:[],status:'aguardando',inspectionId:uid(),itemWorkflow:true,createdAt:new Date().toISOString()};if(!await persist())return;fillProperty();show('property')};
 $('resume').onclick=()=>acimShowLibrary('open','Vistorias em aberto');$('backHome').onclick=returnToHome;
-$('toRooms').onclick=async()=>{if(!validateProperty())return;if(state.status!=='finalizada')state.status='andamento';await persist();renderRooms();show('rooms')};$('editProperty').onclick=()=>{fillProperty();show('property')};
-$('addRoom').onclick=()=>openEditor(-1);$('saveNext').onclick=()=>saveRoom(true);$('saveBack').onclick=()=>saveRoom(false);
+$('toRooms').onclick=async()=>{if(!validateProperty())return;if(state.status!=='finalizada')state.status='andamento';await persist();renderRooms();show('rooms')};$('editProperty').onclick=()=>{propertyFromRooms=true;fillProperty();show('property')};
+$('backProperty').onclick=async()=>{
+ if(!propertyFromRooms)return returnToHome();
+ clearTimeout(autosaveTimer);
+ collectProperty();
+ if(await persist()){propertyFromRooms=false;renderRooms();show('rooms')}
+};
+$('addRoom').onclick=()=>openEditor(-1);$('saveNext').onclick=()=>saveRoom(true);$('saveBack').onclick=async()=>{
+ if($('photos').disabled)return;
+ clearTimeout(autosaveTimer);
+ if(!await saveEditorBeforeLeaving())return;
+ renderRooms();
+ show('rooms');
+};
 
 $('saveExitRooms').onclick=returnToHome;
 $('saveExit').onclick=returnToHome;
@@ -273,7 +285,7 @@ function comparisonPdf(a,b,names,ra,rb){
   const dialog = document.createElement('dialog');
   dialog.setAttribute('aria-label','Fotografar cômodo');
   dialog.style.cssText = 'width:min(92vw,640px);max-height:90vh;border:0;border-radius:16px;padding:16px;background:white;color:#173b59';
-  dialog.innerHTML = '<h2 style="margin:0 0 12px">Fotografar cômodo</h2><video autoplay muted playsinline style="display:block;width:100%;max-height:60vh;object-fit:contain;background:#111"></video><p role="status">Abrindo câmera…</p><div style="display:flex;gap:12px;flex-wrap:wrap"><button type="button" data-shot disabled>Fotografar</button><button type="button" data-close class="secondary">Cancelar</button><button type="button" data-home class="secondary">Voltar ao início</button></div>';
+  dialog.innerHTML = '<h2 style="margin:0 0 12px">Fotografar cômodo</h2><video autoplay muted playsinline style="display:block;width:100%;max-height:60vh;object-fit:contain;background:#111"></video><p role="status">Abrindo câmera…</p><div style="display:flex;gap:12px;flex-wrap:wrap"><button type="button" data-shot disabled>Fotografar</button><button type="button" data-close class="secondary">Voltar</button><button type="button" data-home class="secondary">Sair</button></div>';
   document.body.append(dialog);
   const video=dialog.querySelector('video'), status=dialog.querySelector('[role=status]'), shot=dialog.querySelector('[data-shot]');
   let stream=null, generation=0, room=null, busy=false;
@@ -628,16 +640,7 @@ async function returnToHome() {
  clearTimeout(autosaveTimer);
  try {
   if (visible('property')) collectProperty();
-  if (visible('editor')) {
-   const room = currentRoom();
-   const name = $('roomName');
-   const notes = $('notes').value.trim();
-   if (!name.value.trim() && (room || notes)) name.value = room?.name || 'Cômodo sem nome';
-   if (name.value.trim()) {
-    if (room?.aiSuggestion) room.aiSuggestion.text = $('aiSuggestion').value;
-    if (!await captureEditor()) return;
-   }
-  }
+  if (visible('editor') && !await saveEditorBeforeLeaving()) return;
   if (visible('property') || visible('rooms') || visible('editor')) {
    if (!await acimArchiveCurrent(state.status || 'andamento')) return;
   }
@@ -647,4 +650,13 @@ async function returnToHome() {
  } finally {
   button.disabled = false;
  }
+}
+
+async function saveEditorBeforeLeaving() {
+ const room = currentRoom();
+ const name = $('roomName');
+ if (!name.value.trim() && (room || $('notes').value.trim())) name.value = room?.name || 'Cômodo sem nome';
+ if (!name.value.trim()) return true;
+ if (room?.aiSuggestion) room.aiSuggestion.text = $('aiSuggestion').value;
+ return !!await captureEditor();
 }
