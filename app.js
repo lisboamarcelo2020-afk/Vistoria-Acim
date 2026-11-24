@@ -1,6 +1,6 @@
 'use strict';
 const $=id=>document.getElementById(id), fields=['address','owner','date','time','type','code','purpose','inspector','streetNumber','inspectionKind'];
-let state={property:{},rooms:[]},editing=-1,db,sharedPreview=null,propertyFromRooms=false;
+let state={property:{},rooms:[]},editing=-1,db,sharedPreview=null,propertyFromRooms=false,reportReturnTo='rooms';
 const uid=()=>crypto.randomUUID?.()||String(Date.now()+Math.random());
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -8,7 +8,7 @@ const ACIM_LOGO='logo.jpg';
 function acimHead(t){return `<div class="acim-head"><img src="${ACIM_LOGO}" alt="ACIM Imóveis"><div><h1>${escape(t)}</h1><p>ACIM Imóveis • CRECI 22335</p></div></div>`}
 function acimContacts(){return `Rua Egas Bueno, 540 – Centro – Jaguariúna/SP<br>(19) 99451-1865 • (19) 3937-4700 • acim@acimimoveis.com.br • www.acimimoveis.com.br`}
 
-function show(id){if(id!=='property')propertyFromRooms=false;$('returnHome').hidden=['home','property','rooms','editor'].includes(id);if(id!=='result'){$('backSharedResult').hidden=true;sharedPreview=null;$('sharedAudit').replaceChildren();$('editRooms').hidden=false;$('export').hidden=false;}if(id!=='editor')$('photoList').replaceChildren();if(id!=='result')$('print').replaceChildren();if(id!=='compare'){$('comparePrint').replaceChildren();$('compareList').replaceChildren()}['home','property','rooms','editor','result','library','compare','sharedHistory'].forEach(x=>$(x).classList.toggle('hidden',x!==id));scrollTo(0,0)}
+function show(id){if(id!=='property')propertyFromRooms=false;$('returnHome').hidden=['home','property','rooms','editor'].includes(id);if(id!=='result'){reportReturnTo='rooms';sharedPreview=null;$('sharedAudit').replaceChildren();$('editRooms').hidden=false;$('export').hidden=false;}if(id!=='editor')$('photoList').replaceChildren();if(id!=='result')$('print').replaceChildren();if(id!=='compare'){$('comparePrint').replaceChildren();$('compareList').replaceChildren()}['home','property','rooms','editor','result','library','compare','sharedHistory'].forEach(x=>$(x).classList.toggle('hidden',x!==id));scrollTo(0,0)}
 function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('vistoria-acim',1);r.onupgradeneeded=()=>r.result.createObjectStore('data');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function get(key){return new Promise((res,rej)=>{const q=db.transaction('data').objectStore('data').get(key);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 function put(key,val){return new Promise((res,rej)=>{const tx=db.transaction('data','readwrite');tx.objectStore('data').put(val,key);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('Gravação interrompida'))})}
@@ -97,7 +97,7 @@ const unreviewed=state.rooms.filter(room=>room.aiSuggestion);
 if(unreviewed.length)return alert('Revise ou descarte a sugestão da IA em: '+unreviewed.map(room=>room.name).join(', ')+'.');
 const emptyItems=missingItemRooms();
 if(emptyItems.length&&!confirm('Ambientes sem itens vistoriados: '+emptyItems.map(room=>room.name).join(', ')+'. Finalizar assim?'))return;
-if(state.rooms.some(r=>r.aiPending))return alert('Aguarde a análise das fotos terminar.');const repeated=state.rooms.filter((r,i)=>r.notes?.trim()&&state.rooms.some((x,j)=>j<i&&x.notes?.trim()===r.notes.trim()));if(repeated.length&&!confirm('Há descrições iguais em cômodos diferentes: '+repeated.map(r=>r.name).join(', ')+'. Revise se correspondem às fotos. Continuar?'))return;const pending=state.rooms.filter(r=>(!r.notes?.trim()&&!r.items?.length)||(r.aiGenerated&&r.analysisStale));if(pending.length&&!confirm('Confira os ambientes sem descrição ou com fotos alteradas: '+pending.map(r=>r.name).join(', ')+'. Finalizar mesmo assim?'))return;if(!confirm('Finalizar esta vistoria? Você poderá reabrir depois.'))return;if(!await publishSharedReport()||!await acimArchiveCurrent('finalizada'))return;buildReport();show('result');if(state.sharedRevision)await openSharedRecord(state.inspectionId)};$('pdf').onclick=async()=>{try{buildReport(sharedPreview?.report||state);if(sharedPreview?.history.length){const audit=document.createElement('p');audit.textContent='Último registro: '+auditLabel(sharedPreview.history[0]);$('print').append(audit)}await printReport('print')}catch(e){$('print').classList.remove('print-preparing');alert('Não foi possível preparar o PDF: '+e.message)}};$('editRooms').onclick=async()=>{if(sharedPreview){if(!sharedPreview.editable)return;const row=sharedPreview;if(!await acimArchiveCurrent(state.status||'andamento'))return;state=structuredClone(row.report);state.sharedRevision=row.revision;await persist()}renderRooms();show('rooms')};$('fresh').onclick=()=>$('new').click();
+if(state.rooms.some(r=>r.aiPending))return alert('Aguarde a análise das fotos terminar.');const repeated=state.rooms.filter((r,i)=>r.notes?.trim()&&state.rooms.some((x,j)=>j<i&&x.notes?.trim()===r.notes.trim()));if(repeated.length&&!confirm('Há descrições iguais em cômodos diferentes: '+repeated.map(r=>r.name).join(', ')+'. Revise se correspondem às fotos. Continuar?'))return;const pending=state.rooms.filter(r=>(!r.notes?.trim()&&!r.items?.length)||(r.aiGenerated&&r.analysisStale));if(pending.length&&!confirm('Confira os ambientes sem descrição ou com fotos alteradas: '+pending.map(r=>r.name).join(', ')+'. Finalizar mesmo assim?'))return;if(!confirm('Finalizar esta vistoria? Você poderá reabrir depois.'))return;if(!await publishSharedReport()||!await acimArchiveCurrent('finalizada'))return;buildReport();show('result');if(state.sharedRevision)await openSharedRecord(state.inspectionId,'rooms')};$('pdf').onclick=async()=>{try{buildReport(sharedPreview?.report||state);if(sharedPreview?.history.length){const audit=document.createElement('p');audit.textContent='Último registro: '+auditLabel(sharedPreview.history[0]);$('print').append(audit)}await printReport('print')}catch(e){$('print').classList.remove('print-preparing');alert('Não foi possível preparar o PDF: '+e.message)}};$('editRooms').onclick=async()=>{if(sharedPreview){if(!sharedPreview.editable)return;const row=sharedPreview;if(!await acimArchiveCurrent(state.status||'andamento'))return;state=structuredClone(row.report);state.sharedRevision=row.revision;await persist()}renderRooms();show('rooms')};$('fresh').onclick=()=>$('new').click();
 $('export').onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`vistoria-${state.property.code||'imovel'}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000)};
 let recognition=null;
 $('speak').onclick=()=>{if(recognition){recognition.stop();return}const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){alert('Este navegador não oferece ditado por voz. Use o microfone do teclado Android para escrever por voz.');return}recognition=new SR();recognition.lang='pt-BR';recognition.continuous=true;recognition.interimResults=false;recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)$('notes').value+=($('notes').value?' ':'')+e.results[i][0].transcript};recognition.onerror=e=>{if(e.error!=='no-speech')alert('Falha no reconhecimento de voz: '+e.error)};recognition.onend=()=>{$('speak').textContent='🎙️ Ditar observações';recognition=null};recognition.start();$('speak').textContent='Parar ditado'};
@@ -162,9 +162,9 @@ async function acimArchiveCurrent(status='andamento'){
 }
 async function acimOpenItem(id){
   id=decodeURIComponent(id);const item=acimLoadLibrary().find(x=>x.id===id); if(!item)return;
-  if(item.data?.sharedRevision)return openSharedRecord(id);
+  if(item.data?.sharedRevision)return openSharedRecord(id,'library');
   state=JSON.parse(JSON.stringify(item.data||item)); state.inspectionId=item.id;state.sequence=item.sequence||state.sequence;if(item.status==='finalizada'){state.status='finalizada';state.finalizedAt=state.finalizedAt||item.updatedAt||new Date().toISOString()}
-  if(await persist()){fillProperty();renderRooms();if(state.status==='finalizada'){buildReport();show('result')}else show(state.rooms?.length?'rooms':'property')}
+  if(await persist()){fillProperty();renderRooms();if(state.status==='finalizada'){reportReturnTo='library';buildReport();show('result')}else show(state.rooms?.length?'rooms':'property')}
 }
 async function acimDeleteItem(id){
   id=decodeURIComponent(id);const item=acimLoadLibrary().find(x=>x.id===id);if(!item)return;
@@ -416,15 +416,19 @@ $('sharedBack').onclick=()=>show('home');
 $('sharedLogout').onclick=async()=>{try{await sharedRequest('sair',{});await openSharedHistory()}catch(e){alert(e.message)}};
 $('sharedLogin').onsubmit=async e=>{e.preventDefault();try{await sharedRequest('entrar',{login:$('sharedUser').value.trim(),password:$('sharedPassword').value});await openSharedHistory()}catch(err){$('sharedStatus').textContent=err.message}finally{$('sharedPassword').value=''}};
 
-async function openSharedRecord(id){try{
+async function openSharedRecord(id,returnTo='sharedHistory'){try{
  const row=await sharedRequest('registro/'+encodeURIComponent(id));
- show('result');sharedPreview=row;$('backSharedResult').hidden=false;buildReport(row.report);
+ show('result');sharedPreview=row;reportReturnTo=returnTo;buildReport(row.report);
  $('editRooms').hidden=!row.editable;$('export').hidden=true;
  const audit=$('sharedAudit');audit.replaceChildren();
  const heading=document.createElement('h2');heading.textContent='Histórico de alterações';audit.append(heading);
  for(const entry of row.history){const p=document.createElement('p');p.textContent=(entry.revision===1?'Finalizada por: ':'Alterada por: ')+auditLabel(entry);audit.append(p)}
  }catch(e){alert(e.message)}}
-$('backSharedResult').onclick=openSharedHistory;
+$('reportReturn').onclick=()=>{
+ if(reportReturnTo==='sharedHistory')return openSharedHistory();
+ if(reportReturnTo==='library'){show('library');acimRenderLibrary(window.__acimFilter||'all');return}
+ return $('editRooms').onclick();
+};
 
 let activeItem = null;
 
