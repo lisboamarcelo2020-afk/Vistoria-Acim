@@ -1,5 +1,5 @@
 'use strict';
-const $=id=>document.getElementById(id), fields=['address','owner','date','time','type','code','purpose','inspector','streetNumber','inspectionKind'];
+const $=id=>document.getElementById(id), fields=['address','owner','date','time','type','code','purpose','inspector','streetNumber','inspectionKind','tenant','guaranteeType','guaranteeResponsible'];
 let state={property:{},rooms:[]},editing=-1,db,sharedPreview=null,propertyFromRooms=false,reportReturnTo='rooms';
 const uid=()=>crypto.randomUUID?.()||String(Date.now()+Math.random());
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -13,7 +13,7 @@ function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('
 function get(key){return new Promise((res,rej)=>{const q=db.transaction('data').objectStore('data').get(key);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 function put(key,val){return new Promise((res,rej)=>{const tx=db.transaction('data','readwrite');tx.objectStore('data').put(val,key);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('Gravação interrompida'))})}
 async function persist(){try{syncHighlightNames();if(state.inspectionId||Object.keys(state.property||{}).length||state.rooms?.length)await acimEnsureNumber(state);await put('draft',JSON.parse(JSON.stringify(state,(k,v)=>k==='aiPending'?undefined:v)));$('resume').disabled=false;return true}catch(e){alert('Não foi possível salvar os dados neste aparelho. Exporte uma cópia antes de sair.');return false}}
-function fillProperty(){fields.forEach(f=>{if($(f))$(f).value=state.property[f]||''});const locked=state.status==='finalizada'||!!state.finalizedAt;$('code').readOnly=locked;$('code').setAttribute('aria-readonly',String(locked));$('codeHint').textContent=locked?'Código bloqueado: esta vistoria já foi finalizada.':'Pode ser alterado até a finalização.';$('inspectionNumber').textContent=acimNumber(state);$('inspectionStatus').value=state.status==='finalizada'?'finalizada':state.status==='aguardando'?'aguardando':'andamento';$('inspectionStatus').disabled=locked}
+function fillProperty(){fields.forEach(f=>{if($(f))$(f).value=state.property[f]||''});updateRentalFields();const locked=state.status==='finalizada'||!!state.finalizedAt;$('code').readOnly=locked;$('code').setAttribute('aria-readonly',String(locked));$('codeHint').textContent=locked?'Código bloqueado: esta vistoria já foi finalizada.':'Pode ser alterado até a finalização.';$('inspectionNumber').textContent=acimNumber(state);$('inspectionStatus').value=state.status==='finalizada'?'finalizada':state.status==='aguardando'?'aguardando':'andamento';$('inspectionStatus').disabled=locked}
 
 function collectProperty(){fields.forEach(f=>{if(!$(f))return;if(f==='code'&&(state.status==='finalizada'||state.finalizedAt))return;state.property[f]=$(f).value.trim()});if(state.status!=='finalizada'&&!state.finalizedAt)state.status=$('inspectionStatus').value}
 function validateProperty(){collectProperty();for(const f of propertyRequirements(state))if(!state.property[f]){alert('Preencha os campos obrigatórios, incluindo o número (ou S/N) e o tipo de vistoria nos novos registros.');$(f).focus();return false}return true}
@@ -61,7 +61,7 @@ function renderPhotos(){const el=$('photoList');el.innerHTML='';const room=curre
 async function saveRoom(next){if(!await captureEditor())return;renderRooms();next?openEditor(-1):show('rooms')}
 async function readPhoto(file){let source,url;const canvas=document.createElement('canvas');try{if(window.createImageBitmap){try{source=await createImageBitmap(file,{resizeWidth:1600,resizeQuality:'high'})}catch{}}if(!source){url=URL.createObjectURL(file);source=await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('Imagem incompatível. Use JPEG ou PNG.'));img.src=url})}const scale=Math.min(1,1600/source.width,1600/source.height);canvas.width=Math.max(1,Math.round(source.width*scale));canvas.height=Math.max(1,Math.round(source.height*scale));canvas.getContext('2d').drawImage(source,0,0,canvas.width,canvas.height);const data=canvas.toDataURL('image/jpeg',.78),width=canvas.width,height=canvas.height;canvas.width=240;canvas.height=Math.max(1,Math.round(240*height/width));canvas.getContext('2d').drawImage(source,0,0,canvas.width,canvas.height);return {data,thumbnail:canvas.toDataURL('image/jpeg',.65),width,height,name:file.name}}finally{source?.close?.();if(url)URL.revokeObjectURL(url);canvas.width=canvas.height=1}}
 function formattedDate(s){if(!s)return '';const [y,m,d]=s.split('-').map(Number);return new Intl.DateTimeFormat('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(y,m-1,d))}
-function buildReport(report=state){const state=report;const p=state.property;let html=acimHead('Relatório de Vistoria de Imóvel')+`<div class="meta"><div><strong>Número da vistoria:</strong> ${escape(acimNumber(state))}</div><div><strong>Situação:</strong> ${escape(acimStatus(state))}</div>`;for(const [title,key] of [['Endereço','address'],['Número','streetNumber'],['Tipo de vistoria','inspectionKind'],['Proprietário','owner'],['Data e dia','date'],['Horário','time'],['Tipo de imóvel','type'],['Código','code'],['Finalidade','purpose'],['Responsável','inspector']])html+=`<div><strong>${title}:</strong> ${escape(key==='date'?formattedDate(p[key]):p[key]||'—')}</div>`;html+='</div><p>Registro descritivo baseado nas informações e fotos inseridas durante a vistoria.</p>';state.rooms.forEach((r,i)=>{html+=`<section class="p-room"><h2>${i+1}. ${escape(r.name)}</h2><p>${escape(r.notes)||'Sem observações registradas.'}</p>${reportRoomHighlights(r)}`;r.photos.forEach((photo,j)=>{html+=`<img class="report-photo" src="${escape(photo.data)}" alt="${escape(r.name)} - foto ${j+1}">`});html+='</section>'+reportItems(r)});html+=itemSummary(state)+`<footer>${acimContacts()}<br><br>Relatório gerado em ${escape(new Date().toLocaleString('pt-BR'))}. As condições descritas devem ser conferidas pelo responsável antes do uso ou assinatura.<br><br>________________________________<br>Responsável pela vistoria</footer>`;$('print').innerHTML=html;$('summary').textContent=`${acimNumber(state)} · Imóvel ${p.code} · ${state.rooms.length} cômodo(s) · ${state.rooms.reduce((n,r)=>n+r.photos.length,0)} foto(s)`}
+function buildReport(report=state){const state=report;const p=state.property;let html=acimHead('Relatório de Vistoria de Imóvel')+`<div class="meta"><div><strong>Número da vistoria:</strong> ${escape(acimNumber(state))}</div><div><strong>Situação:</strong> ${escape(acimStatus(state))}</div>`;for(const [title,key] of [['Endereço','address'],['Número','streetNumber'],['Tipo de vistoria','inspectionKind'],['Proprietário','owner'],['Data e dia','date'],['Horário','time'],['Tipo de imóvel','type'],['Código','code'],['Finalidade','purpose'],['Responsável','inspector']])html+=`<div><strong>${title}:</strong> ${escape(key==='date'?formattedDate(p[key]):p[key]||'—')}</div>`;html+=rentalReportFields(p)+'</div><p>Registro descritivo baseado nas informações e fotos inseridas durante a vistoria.</p>';state.rooms.forEach((r,i)=>{html+=`<section class="p-room"><h2>${i+1}. ${escape(r.name)}</h2><p>${escape(r.notes)||'Sem observações registradas.'}</p>${reportRoomHighlights(r)}`;r.photos.forEach((photo,j)=>{html+=`<img class="report-photo" src="${escape(photo.data)}" alt="${escape(r.name)} - foto ${j+1}">`});html+='</section>'+reportItems(r)});html+=itemSummary(state)+`<footer>${acimContacts()}<br><br>Relatório gerado em ${escape(new Date().toLocaleString('pt-BR'))}. As condições descritas devem ser conferidas pelo responsável antes do uso ou assinatura.<br><br>________________________________<br>Responsável pela vistoria</footer>`;$('print').innerHTML=html;$('summary').textContent=`${acimNumber(state)} · Imóvel ${p.code} · ${state.rooms.length} cômodo(s) · ${state.rooms.reduce((n,r)=>n+r.photos.length,0)} foto(s)`}
 $('new').onclick=async()=>{if(state.rooms.length&&!confirm('Iniciar uma nova vistoria? O rascunho atual será substituído. Exporte uma cópia se precisar guardá-lo.'))return;if(!await acimArchiveCurrent(state.status||'andamento'))return;state={property:{date:new Date().toLocaleDateString('en-CA')},rooms:[],status:'aguardando',inspectionId:uid(),itemWorkflow:true,createdAt:new Date().toISOString()};if(!await persist())return;fillProperty();show('property')};
 $('resume').onclick=()=>acimShowLibrary('open','Vistorias em aberto');$('backHome').onclick=returnToHome;
 $('toRooms').onclick=async()=>{if(!validateProperty())return;if(state.status!=='finalizada')state.status='andamento';await persist();renderRooms();show('rooms')};$('editProperty').onclick=()=>{propertyFromRooms=true;fillProperty();show('property')};
@@ -663,4 +663,37 @@ async function saveEditorBeforeLeaving() {
  if (!name.value.trim()) return true;
  if (room?.aiSuggestion) room.aiSuggestion.text = $('aiSuggestion').value;
  return !!await captureEditor();
+}
+
+
+const guaranteeLabels = new Map([
+ ['Seguro-fiança', 'Seguradora responsável'],
+ ['Fiador', 'Nome ou razão social do fiador'],
+ ['Caução', 'Responsável pela caução'],
+]);
+
+function updateRentalFields() {
+ const isRental = $('purpose').value === 'Locação';
+ const label = guaranteeLabels.get($('guaranteeType').value);
+ $('rentalDetails').hidden = !isRental;
+ $('guaranteeResponsibleField').hidden = !label;
+ if (label) $('guaranteeResponsibleLabel').textContent = label;
+}
+
+$('purpose').addEventListener('change', updateRentalFields);
+$('guaranteeType').addEventListener('change', () => {
+ $('guaranteeResponsible').value = '';
+ updateRentalFields();
+});
+
+function rentalReportFields(property) {
+ if (property.purpose !== 'Locação') return '';
+ const label = guaranteeLabels.get(property.guaranteeType);
+ const fields = [
+  ['Locatário', property.tenant],
+  ['Tipo de garantia', property.guaranteeType],
+  [label, property.guaranteeResponsible],
+ ];
+ return fields.filter(([title, value]) => title && value)
+  .map(([title, value]) => `<div><strong>${escape(title)}:</strong> ${escape(value)}</div>`).join('');
 }
