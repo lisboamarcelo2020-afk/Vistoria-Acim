@@ -8,7 +8,7 @@ const ACIM_LOGO='logo.jpg';
 function acimHead(t){return `<div class="acim-head"><img src="${ACIM_LOGO}" alt="ACIM Imóveis"><div><h1>${escape(t)}</h1><p>ACIM Imóveis • CRECI 22335</p></div></div>`}
 function acimContacts(){return `Rua Egas Bueno, 540 – Centro – Jaguariúna/SP<br>(19) 99451-1865 • (19) 3937-4700 • acim@acimimoveis.com.br • www.acimimoveis.com.br`}
 
-function show(id){if(id!=='result'){$('backSharedResult').hidden=true;sharedPreview=null;$('sharedAudit').replaceChildren();$('editRooms').hidden=false;$('export').hidden=false;}if(id!=='editor')$('photoList').replaceChildren();if(id!=='result')$('print').replaceChildren();if(id!=='compare'){$('comparePrint').replaceChildren();$('compareList').replaceChildren()}['home','property','rooms','editor','result','library','compare','sharedHistory'].forEach(x=>$(x).classList.toggle('hidden',x!==id));scrollTo(0,0)}
+function show(id){$('returnHome').hidden=id==='home';if(id!=='result'){$('backSharedResult').hidden=true;sharedPreview=null;$('sharedAudit').replaceChildren();$('editRooms').hidden=false;$('export').hidden=false;}if(id!=='editor')$('photoList').replaceChildren();if(id!=='result')$('print').replaceChildren();if(id!=='compare'){$('comparePrint').replaceChildren();$('compareList').replaceChildren()}['home','property','rooms','editor','result','library','compare','sharedHistory'].forEach(x=>$(x).classList.toggle('hidden',x!==id));scrollTo(0,0)}
 function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('vistoria-acim',1);r.onupgradeneeded=()=>r.result.createObjectStore('data');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function get(key){return new Promise((res,rej)=>{const q=db.transaction('data').objectStore('data').get(key);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 function put(key,val){return new Promise((res,rej)=>{const tx=db.transaction('data','readwrite');tx.objectStore('data').put(val,key);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('Gravação interrompida'))})}
@@ -63,12 +63,12 @@ async function readPhoto(file){let source,url;const canvas=document.createElemen
 function formattedDate(s){if(!s)return '';const [y,m,d]=s.split('-').map(Number);return new Intl.DateTimeFormat('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(y,m-1,d))}
 function buildReport(report=state){const state=report;const p=state.property;let html=acimHead('Relatório de Vistoria de Imóvel')+`<div class="meta"><div><strong>Número da vistoria:</strong> ${escape(acimNumber(state))}</div><div><strong>Situação:</strong> ${escape(acimStatus(state))}</div>`;for(const [title,key] of [['Endereço','address'],['Número','streetNumber'],['Tipo de vistoria','inspectionKind'],['Proprietário','owner'],['Data e dia','date'],['Horário','time'],['Tipo de imóvel','type'],['Código','code'],['Finalidade','purpose'],['Responsável','inspector']])html+=`<div><strong>${title}:</strong> ${escape(key==='date'?formattedDate(p[key]):p[key]||'—')}</div>`;html+='</div><p>Registro descritivo baseado nas informações e fotos inseridas durante a vistoria.</p>';state.rooms.forEach((r,i)=>{html+=`<section class="p-room"><h2>${i+1}. ${escape(r.name)}</h2><p>${escape(r.notes)||'Sem observações registradas.'}</p>${reportRoomHighlights(r)}`;r.photos.forEach((photo,j)=>{html+=`<img class="report-photo" src="${escape(photo.data)}" alt="${escape(r.name)} - foto ${j+1}">`});html+='</section>'+reportItems(r)});html+=itemSummary(state)+`<footer>${acimContacts()}<br><br>Relatório gerado em ${escape(new Date().toLocaleString('pt-BR'))}. As condições descritas devem ser conferidas pelo responsável antes do uso ou assinatura.<br><br>________________________________<br>Responsável pela vistoria</footer>`;$('print').innerHTML=html;$('summary').textContent=`${acimNumber(state)} · Imóvel ${p.code} · ${state.rooms.length} cômodo(s) · ${state.rooms.reduce((n,r)=>n+r.photos.length,0)} foto(s)`}
 $('new').onclick=async()=>{if(state.rooms.length&&!confirm('Iniciar uma nova vistoria? O rascunho atual será substituído. Exporte uma cópia se precisar guardá-lo.'))return;if(!await acimArchiveCurrent(state.status||'andamento'))return;state={property:{date:new Date().toLocaleDateString('en-CA')},rooms:[],status:'aguardando',inspectionId:uid(),itemWorkflow:true,createdAt:new Date().toISOString()};if(!await persist())return;fillProperty();show('property')};
-$('resume').onclick=()=>acimShowLibrary('open','Vistorias em aberto');$('backHome').onclick=async()=>{collectProperty();await persist();show('home')};
+$('resume').onclick=()=>acimShowLibrary('open','Vistorias em aberto');$('backHome').onclick=returnToHome;
 $('toRooms').onclick=async()=>{if(!validateProperty())return;if(state.status!=='finalizada')state.status='andamento';await persist();renderRooms();show('rooms')};$('editProperty').onclick=()=>{fillProperty();show('property')};
 $('addRoom').onclick=()=>openEditor(-1);$('saveNext').onclick=()=>saveRoom(true);$('saveBack').onclick=()=>saveRoom(false);
 
-$('saveExitRooms').onclick=async()=>{if(await persist()&&await acimArchiveCurrent(state.status||'andamento'))show('home')};
-$('saveExit').onclick=async()=>{if(await captureEditor()&&await acimArchiveCurrent(state.status||'andamento'))show('home')};
+$('saveExitRooms').onclick=returnToHome;
+$('saveExit').onclick=returnToHome;
 
 $('deleteRoom').onclick=async()=>{const room=currentRoom();if(!room)return;const hasChild=state.rooms.some(r=>r.parentRoomId===room.id);if(!confirm(hasChild?'Excluir este ambiente, seus destaques e todas as fotos desses registros?':'Excluir este registro e suas fotos?'))return;state.rooms=state.rooms.filter(r=>r.id!==room.id&&r.parentRoomId!==room.id);await persist();renderRooms();show('rooms')};
 $('analyze').onclick=async()=>{const room=currentRoom(),name=$('roomName').value.trim();if(!room?.photos.length)return alert('Adicione fotos deste cômodo antes de analisar.');if(!name)return alert('Informe o nome do cômodo.');if(room.photos.length>12)return alert('A IA aceita até 12 fotos por análise. Divida o registro em áreas menores.');if(room.aiPending)return;room.name=name;room.notes=$('notes').value.trim();collectRoomHighlights(room);const photos=room.photos.map(p=>p.data),notes=room.notes;room.aiPending=true;const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),120000);$('analyze').disabled=true;$('aiStatus').textContent='Analisando os detalhes das fotos. Você pode aguardar ou continuar em outro ambiente.';try{const response=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({room:name,detail:$('analysisDetail').value,mode:room.parentRoomId?'highlights':'room',contextDescription:room.parentRoomId?String(state.rooms.find(r=>r.id===room.parentRoomId)?.notes||'').slice(0,10000):'',evidence:room.highlights||{},notes:room.declaredNotes??(room.aiGenerated||/Visível:/.test(notes)?'':notes),photos})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Falha na análise');if(!state.rooms.includes(room))return;const unchanged=room.photos.length===photos.length&&room.photos.every((p,i)=>p.data===photos[i])&&room.name===name&&room.notes===notes&&(!(currentRoom()===room)||$('notes').value.trim()===notes);if(!unchanged){if(currentRoom()===room)$('aiStatus').textContent='O cômodo foi alterado durante a análise. Analise novamente para usar as fotos e observações atuais.';return}room.aiSuggestion={text:data.description,notes,photoStamp:photoStamp(room)};
@@ -273,12 +273,17 @@ function comparisonPdf(a,b,names,ra,rb){
   const dialog = document.createElement('dialog');
   dialog.setAttribute('aria-label','Fotografar cômodo');
   dialog.style.cssText = 'width:min(92vw,640px);max-height:90vh;border:0;border-radius:16px;padding:16px;background:white;color:#173b59';
-  dialog.innerHTML = '<h2 style="margin:0 0 12px">Fotografar cômodo</h2><video autoplay muted playsinline style="display:block;width:100%;max-height:60vh;object-fit:contain;background:#111"></video><p role="status">Abrindo câmera…</p><div style="display:flex;gap:12px;flex-wrap:wrap"><button type="button" data-shot disabled>Fotografar</button><button type="button" data-close class="secondary">Cancelar</button></div>';
+  dialog.innerHTML = '<h2 style="margin:0 0 12px">Fotografar cômodo</h2><video autoplay muted playsinline style="display:block;width:100%;max-height:60vh;object-fit:contain;background:#111"></video><p role="status">Abrindo câmera…</p><div style="display:flex;gap:12px;flex-wrap:wrap"><button type="button" data-shot disabled>Fotografar</button><button type="button" data-close class="secondary">Cancelar</button><button type="button" data-home class="secondary">Voltar ao início</button></div>';
   document.body.append(dialog);
   const video=dialog.querySelector('video'), status=dialog.querySelector('[role=status]'), shot=dialog.querySelector('[data-shot]');
   let stream=null, generation=0, room=null, busy=false;
   function stop(){generation++;stream?.getTracks().forEach(t=>t.stop());stream=null;video.pause();video.srcObject=null;shot.disabled=true;button.disabled=false;if(dialog.open)dialog.close();if(!$('editor').classList.contains('hidden'))renderPhotos()}
   dialog.querySelector('[data-close]').onclick=stop;
+  dialog.querySelector('[data-home]').onclick=()=>{
+    if(busy)return;
+    stop();
+    returnToHome();
+  };
   dialog.addEventListener('cancel',e=>{e.preventDefault();stop()});
   window.addEventListener('pagehide',stop);
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&dialog.open)stop()});
@@ -470,8 +475,22 @@ $('addItem').onclick = async () => {
 };
 $('cancelItem').onclick = () => $('itemDialog').close();
 $('itemDialog').addEventListener('close', () => {activeItem = null});
-$('itemForm').onsubmit = async event => {
+$('itemForm').onsubmit = event => {
  event.preventDefault();
+ return saveInspectionItem();
+};
+
+$('itemHome').onclick = async () => {
+ if ($('saveItem').disabled) return;
+ const empty = !activeItem.item && !$('itemName').value.trim() && !$('itemLocation').value.trim() &&
+  !$('itemCondition').value && !$('itemTest').value && !$('itemNote').value.trim() &&
+  !$('itemHighlight').value && !$('itemPhotos').querySelector('input:checked');
+ if (empty) $('itemDialog').close();
+ else if (!$('itemForm').reportValidity() || !await saveInspectionItem()) return;
+ await returnToHome();
+};
+
+async function saveInspectionItem() {
  const {room, item} = activeItem;
  const photoIds = [...$('itemPhotos').querySelectorAll('input:checked')].map(input => input.value);
  const saved = {
@@ -493,10 +512,11 @@ $('itemForm').onsubmit = async event => {
   if (!await persist()) {room.items = previous;return}
   $('itemDialog').close();
   renderItems();
+  return true;
  } finally {
   $('saveItem').disabled = false;
  }
-};
+}
 $('deleteItem').onclick = async () => {
  const {room, item} = activeItem;
  if (!item || !confirm('Excluir este item vistoriado?')) return;
@@ -591,4 +611,40 @@ function itemSummary(report) {
  return `<section class="p-room"><h2>Resumo dos itens vistoriados</h2>
   <h3>Pontos de atenção</h3>${lines(attention)}
   <h3>Condições favoráveis</h3>${lines(positive)}</section>`;
+}
+
+
+$('returnHome').onclick = returnToHome;
+
+async function returnToHome() {
+ const button = $('returnHome');
+ if (button.disabled) return;
+ const visible = id => !$(id).classList.contains('hidden');
+ if ($('finish').disabled || $('photos').disabled) {
+  alert('Aguarde a gravação terminar para voltar ao início.');
+  return;
+ }
+ button.disabled = true;
+ clearTimeout(autosaveTimer);
+ try {
+  if (visible('property')) collectProperty();
+  if (visible('editor')) {
+   const room = currentRoom();
+   const name = $('roomName');
+   const notes = $('notes').value.trim();
+   if (!name.value.trim() && (room || notes)) name.value = room?.name || 'Cômodo sem nome';
+   if (name.value.trim()) {
+    if (room?.aiSuggestion) room.aiSuggestion.text = $('aiSuggestion').value;
+    if (!await captureEditor()) return;
+   }
+  }
+  if (visible('property') || visible('rooms') || visible('editor')) {
+   if (!await acimArchiveCurrent(state.status || 'andamento')) return;
+  }
+  if (visible('compare') && $('cmpPdf') &&
+      !confirm('Voltar ao início? Gere o PDF comparativo antes de sair se quiser guardar as observações desta comparação.')) return;
+  show('home');
+ } finally {
+  button.disabled = false;
+ }
 }
