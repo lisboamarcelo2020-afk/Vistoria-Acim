@@ -8,7 +8,7 @@ const ACIM_LOGO='logo.jpg';
 function acimHead(t){return `<div class="acim-head"><img src="${ACIM_LOGO}" alt="ACIM Imóveis"><div><h1>${escape(t)}</h1><p>ACIM Imóveis • CRECI 22335</p></div></div>`}
 function acimContacts(){return `Rua Egas Bueno, 540 – Centro – Jaguariúna/SP<br>(19) 99451-1865 • (19) 3937-4700 • acim@acimimoveis.com.br • www.acimimoveis.com.br`}
 
-function show(id){if(id!=='property')propertyFromRooms=false;$('returnHome').hidden=['home','property','rooms','editor'].includes(id);if(id!=='result'){reportReturnTo='rooms';sharedPreview=null;$('sharedAudit').replaceChildren();$('editRooms').hidden=false;$('export').hidden=false;}if(id!=='editor')$('photoList').replaceChildren();if(id!=='result')$('print').replaceChildren();if(id!=='compare'){$('comparePrint').replaceChildren();$('compareList').replaceChildren()}['home','property','rooms','editor','result','library','compare','sharedHistory'].forEach(x=>$(x).classList.toggle('hidden',x!==id));scrollTo(0,0)}
+function show(id){if(id!=='editor')cancelDictation();if(id!=='property')propertyFromRooms=false;$('returnHome').hidden=['home','property','rooms','editor'].includes(id);if(id!=='result'){reportReturnTo='rooms';sharedPreview=null;$('sharedAudit').replaceChildren();$('editRooms').hidden=false;$('export').hidden=false;}if(id!=='editor')$('photoList').replaceChildren();if(id!=='result')$('print').replaceChildren();if(id!=='compare'){$('comparePrint').replaceChildren();$('compareList').replaceChildren()}['home','property','rooms','editor','result','library','compare','sharedHistory'].forEach(x=>$(x).classList.toggle('hidden',x!==id));scrollTo(0,0)}
 function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('vistoria-acim',1);r.onupgradeneeded=()=>r.result.createObjectStore('data');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function get(key){return new Promise((res,rej)=>{const q=db.transaction('data').objectStore('data').get(key);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 function put(key,val){return new Promise((res,rej)=>{const tx=db.transaction('data','readwrite');tx.objectStore('data').put(val,key);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('Gravação interrompida'))})}
@@ -21,7 +21,7 @@ function propertyRequirements(report){
  return ['address','owner','date','type','code','purpose',...(report.itemWorkflow?['streetNumber','inspectionKind','inspector']:[])];
 }
 function renderRooms(){refreshInspectionReview();const out=$('roomList');out.innerHTML='';state.rooms.forEach((r,i)=>{const d=document.createElement('div');d.className='room';if(r.parentRoomId)d.style.marginLeft='18px';const label=document.createElement('span');label.textContent=`${i+1}. ${r.name||'Sem nome'} · ${r.photos.length} foto(s) · ${r.items?.length||0} item(ns)`;const b=document.createElement('button');b.className='secondary';b.textContent='Editar';b.onclick=()=>openEditor(i);d.append(label,b);out.append(d)});if(!state.rooms.length)out.innerHTML='<p class="hint">Nenhum cômodo registrado ainda.</p>'}
-function openEditor(i){editing=i;$('editorTitle').textContent=i<0?'Novo cômodo':state.rooms[i].parentRoomId?state.rooms[i].name:`Editar cômodo ${i+1}`;$('roomName').value=i<0?'':state.rooms[i].name;$('notes').value=i<0?'':state.rooms[i].notes;$('highlightPositive').value=i<0?'':state.rooms[i].highlights?.positive||'';$('highlightNegative').value=i<0?'':state.rooms[i].highlights?.negative||'';$('analyze').disabled=!!state.rooms[i]?.aiPending;$('aiStatus').textContent='Analise somente fotos deste ambiente e revise a descrição.';$('photos').value='';$('deleteRoom').classList.toggle('hidden',i<0);const parent=state.rooms.find(r=>r.id===currentRoom()?.parentRoomId);$('roomName').readOnly=!!parent;$('backToParentRoom').classList.toggle('hidden',!parent);$('parentDescription').classList.toggle('hidden',!parent);$('parentDescriptionText').textContent=parent?.notes||'Sem descrição registrada no ambiente principal.';renderPhotos();renderItems();renderSuggestion();show('editor')}
+function openEditor(i){cancelDictation();editing=i;$('editorTitle').textContent=i<0?'Novo cômodo':state.rooms[i].parentRoomId?state.rooms[i].name:`Editar cômodo ${i+1}`;$('roomName').value=i<0?'':state.rooms[i].name;$('notes').value=i<0?'':state.rooms[i].notes;$('highlightPositive').value=i<0?'':state.rooms[i].highlights?.positive||'';$('highlightNegative').value=i<0?'':state.rooms[i].highlights?.negative||'';$('analyze').disabled=!!state.rooms[i]?.aiPending;$('aiStatus').textContent='Analise somente fotos deste ambiente e revise a descrição.';$('photos').value='';$('deleteRoom').classList.toggle('hidden',i<0);const parent=state.rooms.find(r=>r.id===currentRoom()?.parentRoomId);$('roomName').readOnly=!!parent;$('backToParentRoom').classList.toggle('hidden',!parent);$('parentDescription').classList.toggle('hidden',!parent);$('parentDescriptionText').textContent=parent?.notes||'Sem descrição registrada no ambiente principal.';renderPhotos();renderItems();renderSuggestion();show('editor')}
 function currentRoom(){return editing<0?null:state.rooms[editing]}
 function collectRoomHighlights(room){if(!room.parentRoomId)return;room.highlights={positive:$('highlightPositive').value.trim(),negative:$('highlightNegative').value.trim()}}
 function syncHighlightNames(){for(const room of state.rooms||[]){if(!room.parentRoomId)continue;const parent=state.rooms.find(r=>r.id===room.parentRoomId);if(parent)room.name=parent.name+' — DESTAQUES'}}
@@ -99,8 +99,59 @@ const emptyItems=missingItemRooms();
 if(emptyItems.length&&!confirm('Ambientes sem itens vistoriados: '+emptyItems.map(room=>room.name).join(', ')+'. Finalizar assim?'))return;
 if(state.rooms.some(r=>r.aiPending))return alert('Aguarde a análise das fotos terminar.');const repeated=state.rooms.filter((r,i)=>r.notes?.trim()&&state.rooms.some((x,j)=>j<i&&x.notes?.trim()===r.notes.trim()));if(repeated.length&&!confirm('Há descrições iguais em cômodos diferentes: '+repeated.map(r=>r.name).join(', ')+'. Revise se correspondem às fotos. Continuar?'))return;const pending=state.rooms.filter(r=>(!r.notes?.trim()&&!r.items?.length)||(r.aiGenerated&&r.analysisStale));if(pending.length&&!confirm('Confira os ambientes sem descrição ou com fotos alteradas: '+pending.map(r=>r.name).join(', ')+'. Finalizar mesmo assim?'))return;if(!confirm('Finalizar esta vistoria? Você poderá reabrir depois.'))return;if(!await publishSharedReport()||!await acimArchiveCurrent('finalizada'))return;buildReport();show('result');if(state.sharedRevision)await openSharedRecord(state.inspectionId,'rooms')};$('pdf').onclick=async()=>{try{buildReport(sharedPreview?.report||state);if(sharedPreview?.history.length){const audit=document.createElement('p');audit.textContent='Último registro: '+auditLabel(sharedPreview.history[0]);$('print').append(audit)}await printReport('print')}catch(e){$('print').classList.remove('print-preparing');alert('Não foi possível preparar o PDF: '+e.message)}};$('editRooms').onclick=async()=>{if(sharedPreview){if(!sharedPreview.editable)return;const row=sharedPreview;if(!await acimArchiveCurrent(state.status||'andamento'))return;state=structuredClone(row.report);state.sharedRevision=row.revision;await persist()}renderRooms();show('rooms')};$('fresh').onclick=()=>$('new').click();
 $('export').onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`vistoria-${state.property.code||'imovel'}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000)};
-let recognition=null;
-$('speak').onclick=()=>{if(recognition){recognition.stop();return}const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){alert('Este navegador não oferece ditado por voz. Use o microfone do teclado Android para escrever por voz.');return}recognition=new SR();recognition.lang='pt-BR';recognition.continuous=true;recognition.interimResults=false;recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)$('notes').value+=($('notes').value?' ':'')+e.results[i][0].transcript};recognition.onerror=e=>{if(e.error!=='no-speech')alert('Falha no reconhecimento de voz: '+e.error)};recognition.onend=()=>{$('speak').textContent='🎙️ Ditar observações';recognition=null};recognition.start();$('speak').textContent='Parar ditado'};
+let dictation=null;
+function cancelDictation(){
+ const active=dictation;
+ if(!active)return;
+ dictation=null;
+ active.button.textContent=active.label;
+ active.speech.abort();
+}
+for(const [buttonId,fieldId] of [['speak','notes'],['speakPositive','highlightPositive'],['speakNegative','highlightNegative']]){
+ const button=$(buttonId),field=$(fieldId),label=button.textContent;
+ button.onclick=()=>{
+  if(dictation?.button===button){dictation.speech.stop();return}
+  const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!Speech){field.focus();alert('Use o microfone do teclado do seu aparelho para ditar neste campo.');return}
+  cancelDictation();
+  const speech=new Speech();
+  const active={speech,button,label};
+  speech.lang='pt-BR';
+  speech.continuous=true;
+  speech.onresult=event=>{
+   if(dictation!==active)return;
+   const parts=[];
+   for(let i=event.resultIndex;i<event.results.length;i++){
+    if(event.results[i].isFinal)parts.push(event.results[i][0].transcript.trim());
+   }
+   const addition=parts.filter(Boolean).join(' ');
+   if(!addition)return;
+   const value=[field.value.trimEnd(),addition].filter(Boolean).join(' ');
+   field.value=field.maxLength<0?value:value.slice(0,field.maxLength);
+   field.dispatchEvent(new Event('input',{bubbles:true}));
+  };
+  const reset=()=>{
+   if(dictation!==active)return;
+   dictation=null;
+   button.textContent=label;
+  };
+  speech.onerror=event=>{
+   if(dictation!==active)return;
+   reset();
+   if(event.error!=='no-speech')alert('Falha no ditado. Confira a permissão do microfone ou use o microfone do teclado.');
+  };
+  speech.onend=reset;
+  dictation=active;
+  try{
+   speech.start();
+   button.textContent='Parar ditado';
+  }catch{
+   reset();
+   alert('Não foi possível iniciar o ditado. Use o microfone do teclado.');
+  }
+ };
+}
+
 
 (async()=>{try{db=await openDB();state=await get('draft')||state;inspectionLibrary=await get(ACIM_LIBRARY_KEY)||[];if(!inspectionLibrary.length){let legacy;try{legacy=JSON.parse(localStorage.getItem(ACIM_LIBRARY_KEY)||'[]')}catch{legacy=[]}if(legacy.length){await acimSaveLibrary(legacy.map(x=>({id:x.id,status:x.status,createdAt:x.createdAt,updatedAt:x.updatedAt,property:x.property,data:x.data||x})));localStorage.removeItem(ACIM_LIBRARY_KEY)}}const recovery=sessionStorage.getItem('acim_camera_room');if(recovery){sessionStorage.removeItem('acim_camera_room');const index=state.rooms?.findIndex(r=>r.id===recovery);if(index>=0){openEditor(index);$('aiStatus').textContent='Rascunho recuperado. Se a câmera foi interrompida pelo celular, tire a foto pelo aplicativo Câmera e importe pela galeria.'}}state.rooms=state.rooms||[];await acimMigrateNumbers();fillProperty();$('resume').disabled=false;if(location.protocol==='file:')$('aiStatus').textContent='Modo de teste local: cadastro, fotos e PDF funcionam; para analisar fotos com IA é necessário publicar e configurar o servidor.'}catch(e){alert('Seu navegador não permitiu salvar dados localmente. Ative o armazenamento do navegador e recarregue.')}if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{})})();
 

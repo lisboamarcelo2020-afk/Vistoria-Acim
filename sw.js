@@ -1,5 +1,5 @@
-const CACHE = 'vistoria-v19';
-const ASSETS = ['./', './index.html', './app.js?v=19', './manifest.webmanifest', './icon.svg', './logo.jpg'];
+const CACHE = 'vistoria-v20';
+const ASSETS = ['./', './index.html', './app.js?v=20', './manifest.webmanifest', './icon.svg', './logo.jpg'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE)
